@@ -114,6 +114,9 @@ public final class Listeners {
         if (!configuration.isKickEnabled()) {
             return;
         }
+        if (!(e.getResult() instanceof KickedFromServerEvent.DisconnectPlayer)) {
+            return;
+        }
         if(e.getPlayer().hasPermission("vmessage.silent.leave")){
             return;
         }
