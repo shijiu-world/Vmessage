@@ -79,6 +79,10 @@ public class VMessage {
         logger.info("Vmessage by FeuSalamander is working !");
         logger.info("[vmessage] 聊天内容颜色码处理：" + configuration.getMessageColors()
                 + "（strip=剥掉 / parse=解析 / keep=原样；有 vmessage.color 权限的玩家一律解析）");
+        if (!configuration.getNoPapiServers().isEmpty()) {
+            logger.info("[vmessage] 这些服收不到 PAPI 变量（走 no-papi-format）："
+                    + String.join(", ", configuration.getNoPapiServers()));
+        }
     }
     public static boolean isDiscord(){
         return discord;

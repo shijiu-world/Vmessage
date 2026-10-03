@@ -36,6 +36,28 @@ enabled = true
 #   各子服  plugins/ 放 PAPIProxyBridge-Bukkit-*.jar（子服本身要有 PlaceholderAPI）
 # 不需要再往 LuckPerms meta 里同步数据，也不需要代理端 LuckPerms 切 MySQL。
 papiproxybridge = true
+
+# ---- 给「没有桥接」的子服单独一套格式 ----
+# 有些子服装不了 PAPIProxyBridge-Bukkit（比如 killer 连 PlaceholderAPI 都没有），
+# 它们收不到 %xxx% 的解析结果。这些服可以走另一套格式：
+#
+#   no-papi-format  备用格式。里面只能写 Vmessage 自己的占位符
+#                   （#player# #prefix# #suffix# #server# #message# 以及任意 #meta#），
+#                   %xxx% 一律不解析、直接抹掉。留空 = 不启用，那些服仍用上面的 format。
+#   no-papi-servers 哪些服用备用格式。填 velocity.toml 里注册的服务器名（不是 [Aliases] 的中文名）。
+#   read-bridge-blacklist
+#                   true = 自动把代理端 PAPIProxyBridge 的 settings.yml 里
+#                   「serverListMode: BLACKLIST」那份 serverList 并进来 —— 名单只维护一处就够。
+#                   （names 是大小写不敏感的；两个来源取并集）
+no-papi-format = "&8[&b#server#&8] &r#prefix#&f#player#&7: &r#message#"
+no-papi-servers = []
+read-bridge-blacklist = true
+#
+# 分发规则（%xxx% 是在【发送者所在服】算的，所以两端都要看）：
+#   发送者在有桥接的服说话 → 名单内的服收 no-papi-format，其余服收 format
+#   发送者在名单内的服说话 → 所有服都收 no-papi-format（这种时候 %xxx% 本来就取不到）
+#   no-papi-format 留空   → 名单内的服也收 format，只是 %xxx% 被抹掉
+# 备用格式里写 %xxx% 没用 —— 它从不走桥接，残余的 %xxx% 会被直接抹掉。
 # 解析结果缓存多久（毫秒）。PAPI 结果会缓存，避免每条消息都走一次网络
 papi-cache-millis = 30000
 # 等子服响应多久（毫秒），超时就当作没解析，把残余 %xxx% 抹成空串

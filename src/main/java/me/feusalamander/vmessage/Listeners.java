@@ -368,10 +368,19 @@ public final class Listeners {
         final String lower = key.toLowerCase(Locale.ROOT);
         return lower.equals(key) ? null : data.getMetaValue(lower);
     }
+    /** 把格式串里的 #player# / #server# / #meta# 这些「代理端自己就能填」的占位符替换掉。 */
+    private String prepare(final String format, final Player p, final String serverName) {
+        final String s = format
+                .replace("#player#", p.getUsername())
+                .replace("#server#", serverName);
+        return luckPermsAPI != null ? luckperms(s, p) : s;
+    }
     public void message(final Player p, final String m) {
-        String actualservername = p.getCurrentServer().orElseThrow().getServerInfo().getName();
-        if(configuration.getAliases().contains(actualservername)){
-            actualservername = configuration.getAliases().getString(actualservername);
+        final String actualservername;
+        {
+            final String raw = p.getCurrentServer().orElseThrow().getServerInfo().getName();
+            actualservername = configuration.getAliases().contains(raw)
+                    ? configuration.getAliases().getString(raw) : raw;
         }
         if(configuration.getMessagecmd() != null&&!configuration.getMessagecmd().isEmpty())
             for(String s : configuration.getMessagecmd()){
@@ -383,71 +392,91 @@ public final class Listeners {
                 }
                 proxyServer.getCommandManager().executeAsync(proxyServer.getConsoleCommandSource(), s);
             }
-        String message = configuration.getMessageFormat();
-        if(message.isEmpty())return;
-        final boolean permission = p.hasPermission("vmessage.minimessage");
-        message = message
-                .replace("#player#", p.getUsername())
-                .replace("#server#", actualservername);
-        if (luckPermsAPI != null) {
-            message = luckperms(message, p);
+        final String mainFormat = configuration.getMessageFormat();
+        // 备用格式：给没装 PAPIProxyBridge-Bukkit 的子服（黑名单里的）用，只认 #xxx#，不解析 %xxx%
+        final String altFormat = configuration.getNoPapiFormat();
+        if (mainFormat.isEmpty() && altFormat == null) {
+            return;
         }
+        final boolean permission = p.hasPermission("vmessage.minimessage");
+        final String main = mainFormat.isEmpty() ? "" : prepare(mainFormat, p, actualservername);
+        final String alt = altFormat == null ? main : prepare(altFormat, p, actualservername);
         // PAPIProxyBridge：把 %xxx% 交给玩家【所在子服】的 PlaceholderAPI 解析（异步）。
         // 这一步在 #message# 替换【之前】做 —— 玩家输入的聊天内容不会被当成占位符解析。
         final PapiBridge papi = VMessage.papi();
-        if (papi != null && configuration.isPapiEnabled() && message.indexOf('%') >= 0) {
-            papi.format(message, p.getUniqueId()).thenAccept(resolved ->
+        if (papi != null && configuration.isPapiEnabled() && main.indexOf('%') >= 0) {
+            papi.format(main, p.getUniqueId()).thenAccept(resolved ->
                     // PAPI 返回的是 § 码，而 Vmessage 用 & 序列化
-                    deliver(p, FormatCleaner.finish(resolved.replace('§', '&')), m, permission));
+                    deliver(p, FormatCleaner.finish(resolved.replace('§', '&')),
+                            FormatCleaner.finish(alt), m, permission));
             return;
         }
         // 没装桥接 / 手动关掉时也要清一遍，否则 format 里的 %xxx% 会原样显示给玩家
-        deliver(p, FormatCleaner.finish(message), m, permission);
+        deliver(p, FormatCleaner.finish(main), FormatCleaner.finish(alt), m, permission);
     }
 
-    private void deliver(final Player p, String message, final String m, final boolean permission) {
+    /**
+     * 把消息发到各子服。
+     *
+     * @param mainFormat 已经解析完的常规格式（可能含 PAPI 结果），还留着 #message# 没替换
+     * @param altFormat  已经解析完的备用格式（从未走 PAPI），给黑名单里的子服用；与主格式相同时就是同一个串
+     */
+    private void deliver(final Player p, final String mainFormat, final String altFormat,
+                         final String m, final boolean permission) {
         final boolean mini = configuration.isMinimessageEnabled();
         // 玩家聊天内容里的颜色码怎么处理；有 vmessage.color 权限的人一律解析
         final String colorMode = p.hasPermission(COLOR_PERMISSION) ? "parse" : configuration.getMessageColors();
         final String content = "strip".equals(colorMode) ? ChatColors.strip(m) : m;
         final Map<String, String> namedColors = configuration.getNamedColors();
-        Component finalMessage;
-        if (mini && permission) {
-            // 开了 MiniMessage 且玩家有权限：消息内容直接参与解析（可以用 <red> 这类语法）
-            finalMessage = mm.deserialize(message.replace("#message#", content).replace("§", ""));
-        } else {
-            finalMessage = mini ? mm.deserialize(message.replace("§", "")) : SERIALIZER.deserialize(message);
-            finalMessage = finalMessage.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder()
-                    .matchLiteral("#message#")
-                    .replacement(messageComponent(colorMode, content, namedColors))
-                    .build());
-        }
-        String discordRaw;
-        if(VMessage.isDiscord()){
+        final Component mainComponent = mainFormat.isEmpty() ? null
+                : build(mainFormat, content, mini, permission, colorMode, namedColors);
+        final Component altComponent = altFormat.isEmpty() ? mainComponent
+                : altFormat.equals(mainFormat) ? mainComponent
+                : build(altFormat, content, mini, permission, colorMode, namedColors);
+        if (VMessage.isDiscord()) {
+            final String source = mainFormat.isEmpty() ? altFormat : mainFormat;
             String dump = "";
-            String[] dump2 = message.replace("&", "§").split("§");
-            proxyServer.sendMessage(Component.text(Arrays.toString(dump2)));
+            String[] dump2 = source.replace("&", "§").split("§");
             for(String string : dump2){
                 if(string.length() >1)
                     dump = dump+string.substring(1);
             }
-            discordRaw = dump;
-        } else {
-            discordRaw = message;
+            VelocityDiscord.getDiscord().sendMessage(dump);
         }
-        if(configuration.isAllEnabled()){
-            proxyServer.sendMessage(finalMessage);
-			if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
-        }else {
-            final Component FMessage = finalMessage;
-            proxyServer.getAllServers().forEach(server -> {
-                if (!Objects.equals(p.getCurrentServer().map(ServerConnection::getServerInfo).orElse(null), server.getServerInfo())) {
-                    server.sendMessage(FMessage);
-					if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
-                }
-            });
+        final com.velocitypowered.api.proxy.server.ServerInfo sender =
+                p.getCurrentServer().map(ServerConnection::getServerInfo).orElse(null);
+        // 变量是在【发送者所在服】算的：那个服自己就在名单里时，%xxx% 一样算不出来，
+        // 这种时候所有服统一用备用格式，免得别的服收到一条被抹空的残缺消息。
+        final boolean forceAlt = sender != null && configuration.isNoPapiServer(sender.getName());
+        final boolean all = configuration.isAllEnabled();
+        for (final RegisteredServer server : proxyServer.getAllServers()) {
+            // all=false：发送者所在服照常收到它自己的原始聊天（子服插件处理），这里跳过
+            if (!all && Objects.equals(sender, server.getServerInfo())) {
+                continue;
+            }
+            final boolean noPapi = forceAlt || configuration.isNoPapiServer(server.getServerInfo().getName());
+            // 备用格式没配（null）时退回常规格式 —— 宁可有空段，也别整条消息没了
+            final Component target = noPapi && altComponent != null ? altComponent : mainComponent;
+            if (target == null) {
+                continue;
+            }
+            server.sendMessage(target);
         }
+    }
 
+    /** 把一条格式串变成组件：#message# 在这一步才换成玩家真正说的话。 */
+    private Component build(final String message, final String content, final boolean mini,
+                            final boolean permission, final String colorMode,
+                            final Map<String, String> namedColors) {
+        if (mini && permission) {
+            // 开了 MiniMessage 且玩家有权限：消息内容直接参与解析（可以用 <red> 这类语法）
+            return mm.deserialize(message.replace("#message#", content).replace("§", ""));
+        }
+        final Component parsed = mini ? mm.deserialize(message.replace("§", "")) : SERIALIZER.deserialize(message);
+        return parsed.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder()
+                .matchLiteral("#message#")
+                .replacement(messageComponent(colorMode, content, namedColors))
+                .build());
     }
 
     /** 按 colorMode 决定消息内容怎么变成组件：parse 解析颜色码（含 CMI 的 {#RRGGBB} 那套），strip / keep 都按纯文本处理。 */

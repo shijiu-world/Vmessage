@@ -6,11 +6,15 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class Configuration {
     private String messageFormat;
@@ -71,6 +75,17 @@ public final class Configuration {
     // 改版：Custom-Meta 支持任意多个槽位，key = 占位符名(对应 #key#)，value = LuckPerms meta 键
     private Map<String, String> customMeta;
     private Toml aliases;
+    /**
+     * 发给「解析不了 PAPI」的子服的另一套格式（那些服没装 PAPIProxyBridge-Bukkit）。
+     * 为空表示不另配 —— 那些服收到的仍是主 format，只是 %xxx% 会被抹掉。
+     */
+    private String noPapiFormat;
+    /** 上面那套格式适用哪些服；存小写，用 velocity.toml 里注册的服务器名。 */
+    private final Set<String> noPapiServers = new LinkedHashSet<>();
+    /** 是否自动沿用 PAPIProxyBridge settings.yml 里的黑名单。 */
+    private boolean readBridgeBlacklist;
+    /** 代理的 plugins 目录（用来找 PAPIProxyBridge 的配置），可能为 null。 */
+    private Path pluginsDir;
 
     Configuration(Toml config) {
         messageFormat = config.getString("Message.format", "");
@@ -106,7 +121,50 @@ public final class Configuration {
         namedColors = readNamedColors(config);
 
         customMeta = readCustomMeta(config);
+
+        // ---- 给「没有 PAPI 桥接」的子服用的备用格式 ----
+        noPapiFormat = trimToNull(config.getString("Message.no-papi-format", ""));
+        readBridgeBlacklist = config.getBoolean("Message.read-bridge-blacklist", true);
+        noPapiServers.clear();
+        noPapiServers.addAll(readServerList(config, "Message.no-papi-servers"));
+        mergeBridgeBlacklist();
+
         this.config = config;
+    }
+
+    /** 把 PAPIProxyBridge 黑名单里的服并进 no-papi 名单（只加不减，config.toml 里写的永远生效）。 */
+    private void mergeBridgeBlacklist() {
+        if (!readBridgeBlacklist || pluginsDir == null) {
+            return;
+        }
+        noPapiServers.addAll(PapiBlacklist.read(pluginsDir));
+    }
+
+    /** 读一个字符串数组（允许写成 no-papi-servers = ["killer"] 或多行）。 */
+    private static Set<String> readServerList(final Toml config, final String path) {
+        final Set<String> set = new LinkedHashSet<>();
+        final List<String> list = config.getList(path);
+        if (list == null) {
+            return set;
+        }
+        for (final String raw : list) {
+            if (raw == null) {
+                continue;
+            }
+            final String name = raw.trim();
+            if (!name.isEmpty()) {
+                set.add(name.toLowerCase(Locale.ROOT));
+            }
+        }
+        return set;
+    }
+
+    private static String trimToNull(final String s) {
+        if (s == null) {
+            return null;
+        }
+        final String t = s.trim();
+        return t.isEmpty() ? null : t;
     }
 
     /**
@@ -157,7 +215,11 @@ public final class Configuration {
         if (f != null) {
             file = f.toFile();
             Toml config = new Toml().read(file);
-            return new Configuration(config);
+            final Configuration configuration = new Configuration(config);
+            // plugins/vmessage 的上一级就是 plugins/，拿它去找 PAPIProxyBridge 的配置
+            configuration.pluginsDir = dataDirectory.toAbsolutePath().getParent();
+            configuration.mergeBridgeBlacklist();
+            return configuration;
         }
         return null;
     }
@@ -266,6 +328,40 @@ public final class Configuration {
     public Map<String, String> getNamedColors() {
         return this.namedColors;
     }
+
+    /**
+     * 给「解析不了 PAPI 变量」的子服用的备用格式 —— 里面只能写 Vmessage 自己的占位符
+     * （#player# #prefix# #suffix# #server# #message# 以及任意 #meta#），%xxx% 一律不解析。
+     * 没配（null）表示这些服仍用主 format，只是 %xxx% 被抹成空。
+     */
+    public String getNoPapiFormat() {
+        return this.noPapiFormat;
+    }
+
+    /**
+     * 该服是否要用 {@link #getNoPapiFormat()}。
+     * 传 velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名），大小写不敏感。
+     */
+    public boolean isNoPapiServer(final String serverName) {
+        return serverName != null && noPapiServers.contains(serverName.toLowerCase(Locale.ROOT));
+    }
+
+    /** 当前生效的 no-papi 名单（小写），只在日志里用。 */
+    public Set<String> getNoPapiServers() {
+        return Collections.unmodifiableSet(noPapiServers);
+    }
+
+    /** 运行时追加 no-papi 名单（外部调用，比如命令或后续扩展）。 */
+    public void addNoPapiServers(final Collection<String> serverNames) {
+        if (serverNames == null) {
+            return;
+        }
+        for (final String name : serverNames) {
+            if (name != null && !name.trim().isEmpty()) {
+                noPapiServers.add(name.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+    }
 	
     void reload(){
         config = config.read(file);
@@ -301,5 +397,11 @@ public final class Configuration {
         this.namedColors = readNamedColors(config);
 
         this.customMeta = readCustomMeta(config);
+
+        this.noPapiFormat = trimToNull(config.getString("Message.no-papi-format", ""));
+        this.readBridgeBlacklist = config.getBoolean("Message.read-bridge-blacklist", true);
+        this.noPapiServers.clear();
+        this.noPapiServers.addAll(readServerList(config, "Message.no-papi-servers"));
+        mergeBridgeBlacklist();
     }
 }
