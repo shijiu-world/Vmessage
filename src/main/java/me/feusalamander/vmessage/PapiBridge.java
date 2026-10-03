@@ -6,7 +6,6 @@ import java.lang.reflect.Method;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
 
 /**
  * PAPIProxyBridge（William278）软依赖封装。
@@ -20,16 +19,6 @@ import java.util.regex.Pattern;
  */
 public final class PapiBridge {
     private static final String API = "net.william278.papiproxybridge.api.PlaceholderAPI";
-    /** 没解析掉的占位符，兜底抹成空串 */
-    private static final Pattern UNRESOLVED = Pattern.compile("%[A-Za-z0-9_.\\-]{1,64}%");
-    /**
-     * 抹掉占位符之后剩下的"空壳"包裹符，例如 CMI 格式里的 [&6%legendaryguild_guild%&r]
-     * 在公会变量取不到时会变成 [&6&r] —— 玩家会看到一对空的 []，这里连括号带它前面的
-     * 那个空格一起删掉（否则会留下双空格）。
-     * 只匹配括号里除了颜色码以外什么都没有的情况，不会误伤有内容的括号。
-     */
-    private static final Pattern EMPTY_BRACKETS =
-            Pattern.compile("\\s?\\[(?:\\s*[&§](?:[0-9a-fA-Fk-oK-OrR]|#[0-9a-fA-F]{6}))*\\s*\\]");
 
     private final Logger logger;
     private final Method getInstance;
@@ -129,21 +118,5 @@ public final class PapiBridge {
             }
             return CompletableFuture.completedFuture(text);
         }
-    }
-
-    /**
-     * 兜底清理，两步：
-     * ① 把没解析掉的 %xxx% 抹成空串，避免玩家看到原始占位符；
-     * ② 抹完之后如果某个 [] 里只剩颜色码（例如 [&6%legendaryguild_guild%&r] → [&6&r]），
-     *    连括号一起删掉，否则会留下一对空的 []。
-     *
-     * 只在 #message# 替换【之前】调用，所以不会碰到玩家输入的聊天内容。
-     */
-    public static String stripUnresolved(final String s) {
-        if (s == null) {
-            return "";
-        }
-        final String stripped = UNRESOLVED.matcher(s).replaceAll("");
-        return EMPTY_BRACKETS.matcher(stripped).replaceAll("");
     }
 }

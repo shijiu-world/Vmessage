@@ -90,7 +90,7 @@ public final class Listeners {
                         .replace("#player#", p.getUsername())
                         .replace("#oldserver#", servername);
                 if (luckPermsAPI != null) {
-                    s = luckperms(s, p);
+                    s = FormatCleaner.removeHoles(luckperms(s, p));
                 }
                 proxyServer.getCommandManager().executeAsync(proxyServer.getConsoleCommandSource(), s);
             }
@@ -99,7 +99,7 @@ public final class Listeners {
                 .replace("#player#", p.getUsername())
                 .replace("#oldserver#", servername);
         if (luckPermsAPI != null) {
-            message = luckperms(message, p);
+            message = FormatCleaner.finish(luckperms(message, p));
         }
         String discordRaw;
         if(VMessage.isDiscord()){
@@ -150,7 +150,7 @@ public final class Listeners {
                         .replace("#player#", p.getUsername())
                         .replace("#oldserver#", servername);
                 if (luckPermsAPI != null) {
-                    s = luckperms(s, p);
+                    s = FormatCleaner.removeHoles(luckperms(s, p));
                 }
                 proxyServer.getCommandManager().executeAsync(proxyServer.getConsoleCommandSource(), s);
             }
@@ -159,7 +159,7 @@ public final class Listeners {
                 .replace("#player#", p.getUsername())
                 .replace("#oldserver#", servername);
         if (luckPermsAPI != null) {
-            message = luckperms(message, p);
+            message = FormatCleaner.finish(luckperms(message, p));
         }
         String discordRaw;
         if(VMessage.isDiscord()){
@@ -215,7 +215,7 @@ public final class Listeners {
                             .replace("#oldserver#", oldservername)
                             .replace("#server#", actualservername);
                     if (luckPermsAPI != null) {
-                        s = luckperms(s, p);
+                        s = FormatCleaner.removeHoles(luckperms(s, p));
                     }
                     proxyServer.getCommandManager().executeAsync(proxyServer.getConsoleCommandSource(), s);
                 }
@@ -225,7 +225,7 @@ public final class Listeners {
                     .replace("#oldserver#", oldservername)
                     .replace("#server#", actualservername);
             if (luckPermsAPI != null) {
-                message = luckperms(message, p);
+                message = FormatCleaner.finish(luckperms(message, p));
             }
             String discordRaw;
             if(VMessage.isDiscord()){
@@ -264,7 +264,7 @@ public final class Listeners {
                             .replace("#player#", p.getUsername())
                             .replace("#server#", actualservername);
                     if (luckPermsAPI != null) {
-                        s = luckperms(s, p);
+                        s = FormatCleaner.removeHoles(luckperms(s, p));
                     }
                     proxyServer.getCommandManager().executeAsync(proxyServer.getConsoleCommandSource(), s);
                 }
@@ -274,7 +274,7 @@ public final class Listeners {
                     .replace("#player#", p.getUsername())
                     .replace("#server#", actualservername);
             if (luckPermsAPI != null) {
-                message = luckperms(message, p);
+                message = FormatCleaner.finish(luckperms(message, p));
             }
             String discordRaw;
             if(VMessage.isDiscord()){
@@ -337,19 +337,21 @@ public final class Listeners {
                 continue;
             }
             final String value = metaValue(data, name);
-            auto.put(name, value == null ? "" : value);
+            // 取不到就放哨兵而不是空串 —— 让后面的 collapse 知道"这一段没了"，好把它留出的空格收掉
+            auto.put(name, value == null || value.isEmpty() ? FormatCleaner.HOLE : value);
         }
         for (final Map.Entry<String, String> entry : auto.entrySet()) {
             message = message.replace("#" + entry.getKey() + "#", entry.getValue());
         }
 
-        // ③ 兜底：取不到值的占位符一律抹成空串，不会把 #xxx# 露给玩家
-        message = message.replace("#prefix#", "").replace("#suffix#", "");
+        // ③ 兜底：取不到值的占位符一律换成哨兵，不会把 #xxx# 露给玩家
+        final String hole = Matcher.quoteReplacement(FormatCleaner.HOLE);
+        message = message.replace("#prefix#", FormatCleaner.HOLE).replace("#suffix#", FormatCleaner.HOLE);
         final Matcher cleaner = PLACEHOLDER.matcher(message);
         final StringBuffer sb = new StringBuffer();
         while (cleaner.find()) {
             final String name = cleaner.group(1);
-            cleaner.appendReplacement(sb, BUILTIN.contains(name) ? Matcher.quoteReplacement(cleaner.group()) : "");
+            cleaner.appendReplacement(sb, BUILTIN.contains(name) ? Matcher.quoteReplacement(cleaner.group()) : hole);
         }
         cleaner.appendTail(sb);
         return sb.toString();
@@ -377,7 +379,7 @@ public final class Listeners {
                         .replace("#player#", p.getUsername())
                         .replace("#server#", actualservername);
                 if (luckPermsAPI != null) {
-                    s = luckperms(s, p);
+                    s = FormatCleaner.removeHoles(luckperms(s, p));
                 }
                 proxyServer.getCommandManager().executeAsync(proxyServer.getConsoleCommandSource(), s);
             }
@@ -396,11 +398,11 @@ public final class Listeners {
         if (papi != null && configuration.isPapiEnabled() && message.indexOf('%') >= 0) {
             papi.format(message, p.getUniqueId()).thenAccept(resolved ->
                     // PAPI 返回的是 § 码，而 Vmessage 用 & 序列化
-                    deliver(p, PapiBridge.stripUnresolved(resolved.replace('§', '&')), m, permission));
+                    deliver(p, FormatCleaner.finish(resolved.replace('§', '&')), m, permission));
             return;
         }
         // 没装桥接 / 手动关掉时也要清一遍，否则 format 里的 %xxx% 会原样显示给玩家
-        deliver(p, PapiBridge.stripUnresolved(message), m, permission);
+        deliver(p, FormatCleaner.finish(message), m, permission);
     }
 
     private void deliver(final Player p, String message, final String m, final boolean permission) {
