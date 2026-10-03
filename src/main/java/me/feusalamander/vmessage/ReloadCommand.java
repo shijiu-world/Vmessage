@@ -8,25 +8,29 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import java.util.List;
 
 public final class ReloadCommand implements SimpleCommand {
-    private final Configuration config;
+    private final VMessage main;
 
-    ReloadCommand(Configuration config) {
-        this.config = config;
+    ReloadCommand(VMessage main) {
+        this.main = main;
     }
 
     @Override
     public void execute(final Invocation invocation) {
         final CommandSource source = invocation.source();
         final String[] args = invocation.arguments();
-        if (args.length == 0) {
+        // 只有一个子命令，少打一个单词也算数（/vmessage = /vmessage reload）
+        if (args.length > 0 && !args[0].equalsIgnoreCase("reload")) {
             source.sendMessage(Component.text("Usage: /vmessage reload", NamedTextColor.RED));
             return;
         }
-        final String s = args[0];
-        if (s.equalsIgnoreCase("reload")) {
-            config.reload();
-            source.sendMessage(Component.text("The Vmessage's config has been succefully reloaded"));
+        if (main.reload()) {
+            source.sendMessage(Component.text("Vmessage 配置已重载（改 config.toml 后不用重启）",
+                    NamedTextColor.GREEN));
+            return;
         }
+        final String reason = main.lastReloadError();
+        source.sendMessage(Component.text("config.toml 读不出来，已保留旧配置："
+                + (reason == null ? "未知原因" : reason), NamedTextColor.RED));
     }
 
     @Override

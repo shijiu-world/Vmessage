@@ -17,22 +17,24 @@ import java.util.Objects;
 import java.util.Set;
 
 public final class Configuration {
-    private String messageFormat;
-    private String joinFormat;
-    private String leaveFormat;
-    private String kickFormat;
-    private String changeFormat;
-    private boolean messageEnabled;
-    private boolean joinEnabled;
-    private boolean leaveEnabled;
-    private boolean kickEnabled;
-    private boolean changeEnabled;
-    private boolean minimessage;
-    private boolean all;
-    private boolean papiEnabled;
-    private long papiCacheMillis;
-    private long papiTimeoutMillis;
-    private int papiRetryTimes;
+    // ⚠️ 全部 volatile：reload 可能在别的线程（命令、自动热重载的定时任务）里改这些值，
+    //    而聊天事件在读它们。没有可见性保证的话，改完要等很久才生效，甚至永远不生效。
+    private volatile String messageFormat;
+    private volatile String joinFormat;
+    private volatile String leaveFormat;
+    private volatile String kickFormat;
+    private volatile String changeFormat;
+    private volatile boolean messageEnabled;
+    private volatile boolean joinEnabled;
+    private volatile boolean leaveEnabled;
+    private volatile boolean kickEnabled;
+    private volatile boolean changeEnabled;
+    private volatile boolean minimessage;
+    private volatile boolean all;
+    private volatile boolean papiEnabled;
+    private volatile long papiCacheMillis;
+    private volatile long papiTimeoutMillis;
+    private volatile int papiRetryTimes;
     /**
      * 读 [Message.named-colors] 这张表 —— CMI 风格命名色 {#名字} 的对照表。
      * 例：
@@ -63,31 +65,50 @@ public final class Configuration {
         return map;
     }
 
-    private String messageColors;
-    private Map<String, String> namedColors = Collections.emptyMap();
+    private volatile String messageColors;
+    private volatile Map<String, String> namedColors = Collections.emptyMap();
     private Toml config;
     private static File file;
-    private List<String> messagecmd;
-    private List<String> joincmd;
-    private List<String> leavecmd;
-    private List<String> kickcmd;
-    private List<String> changecmd;
+    private volatile List<String> messagecmd;
+    private volatile List<String> joincmd;
+    private volatile List<String> leavecmd;
+    private volatile List<String> kickcmd;
+    private volatile List<String> changecmd;
     // 改版：Custom-Meta 支持任意多个槽位，key = 占位符名(对应 #key#)，value = LuckPerms meta 键
-    private Map<String, String> customMeta;
-    private Toml aliases;
+    private volatile Map<String, String> customMeta;
+    private volatile Toml aliases;
     /**
      * 发给「解析不了 PAPI」的子服的另一套格式（那些服没装 PAPIProxyBridge-Bukkit）。
      * 为空表示不另配 —— 那些服收到的仍是主 format，只是 %xxx% 会被抹掉。
      */
-    private String noPapiFormat;
+    private volatile String noPapiFormat;
     /** 上面那套格式适用哪些服；存小写，用 velocity.toml 里注册的服务器名。 */
-    private final Set<String> noPapiServers = new LinkedHashSet<>();
+    private volatile Set<String> noPapiServers = new LinkedHashSet<>();
     /** 是否自动沿用 PAPIProxyBridge settings.yml 里的黑名单。 */
-    private boolean readBridgeBlacklist;
+    private volatile boolean readBridgeBlacklist;
     /** 代理的 plugins 目录（用来找 PAPIProxyBridge 的配置），可能为 null。 */
-    private Path pluginsDir;
+    private volatile Path pluginsDir;
+    /** 改了 config.toml 之后自动重载，不用敲命令（默认关）。 */
+    private volatile boolean autoReload;
+    /** 自动重载的检查间隔（秒）。 */
+    private volatile long autoReloadIntervalSeconds;
+    /** 上一次 reload 失败的原因（TOML 语法错误），读一次就清掉。 */
+    private volatile String lastError;
 
     Configuration(Toml config) {
+        // file 由 load() 先设好：plugins/vmessage/config.toml → 上两级就是 plugins/
+        if (file != null) {
+            pluginsDir = file.toPath().toAbsolutePath().getParent().getParent();
+        }
+        apply(config);
+    }
+
+    /**
+     * 把一份 TOML 灌进所有字段。
+     * 构造和 reload 走的是同一段代码 —— 以前两处各写一遍，新增字段时 reload 漏抄过一次
+     * （reload 后仍是启动时的值），现在不会再犯。
+     */
+    private void apply(final Toml config) {
         messageFormat = config.getString("Message.format", "");
         joinFormat = config.getString("Join.format", "");
         leaveFormat = config.getString("Leave.format", "");
@@ -125,19 +146,25 @@ public final class Configuration {
         // ---- 给「没有 PAPI 桥接」的子服用的备用格式 ----
         noPapiFormat = trimToNull(config.getString("Message.no-papi-format", ""));
         readBridgeBlacklist = config.getBoolean("Message.read-bridge-blacklist", true);
-        noPapiServers.clear();
-        noPapiServers.addAll(readServerList(config, "Message.no-papi-servers"));
-        mergeBridgeBlacklist();
+        // 整个集合替换，不在原集合上 clear+addAll —— 免得别的线程读到「清空了但还没填」的中间态
+        noPapiServers = buildNoPapiServers(config);
+
+        // ---- 热重载 ----
+        autoReload = config.getBoolean("auto-reload", false);
+        autoReloadIntervalSeconds = Math.max(1L, config.getLong("auto-reload-interval-seconds", 5L));
 
         this.config = config;
     }
 
-    /** 把 PAPIProxyBridge 黑名单里的服并进 no-papi 名单（只加不减，config.toml 里写的永远生效）。 */
-    private void mergeBridgeBlacklist() {
+    private Set<String> buildNoPapiServers(final Toml config) {
+        final Set<String> names = readServerList(config, "Message.no-papi-servers");
         if (!readBridgeBlacklist || pluginsDir == null) {
-            return;
+            return names;
         }
-        noPapiServers.addAll(PapiBlacklist.read(pluginsDir));
+        // 与 PAPIProxyBridge settings.yml 里的黑名单取并集（只加不减，config.toml 里写的永远生效）
+        final Set<String> merged = new LinkedHashSet<>(names);
+        merged.addAll(PapiBlacklist.read(pluginsDir));
+        return merged;
     }
 
     /** 读一个字符串数组（允许写成 no-papi-servers = ["killer"] 或多行）。 */
@@ -214,12 +241,7 @@ public final class Configuration {
         Path f = createConfig(dataDirectory);
         if (f != null) {
             file = f.toFile();
-            Toml config = new Toml().read(file);
-            final Configuration configuration = new Configuration(config);
-            // plugins/vmessage 的上一级就是 plugins/，拿它去找 PAPIProxyBridge 的配置
-            configuration.pluginsDir = dataDirectory.toAbsolutePath().getParent();
-            configuration.mergeBridgeBlacklist();
-            return configuration;
+            return new Configuration(new Toml().read(file));
         }
         return null;
     }
@@ -363,45 +385,45 @@ public final class Configuration {
         }
     }
 	
-    void reload(){
-        config = config.read(file);
-        this.messageFormat = config.getString("Message.format");
-        this.joinFormat = config.getString("Join.format");
-        this.leaveFormat = config.getString("Leave.format");
-        this.kickFormat = config.getString("Kick.format");
-        this.changeFormat = config.getString("Server-change.format");
+    /**
+     * 热重载：重新读一遍 config.toml。
+     *
+     * @return true = 已生效；false = 文件读不出来（TOML 写坏了），**旧配置原样保留**
+     */
+    boolean reload() {
+        if (file == null) {
+            return false;
+        }
+        try {
+            // 用全新的 Toml 读（不带旧值做默认值），这样删掉的配置项是真的消失
+            apply(new Toml().read(file));
+            return true;
+        } catch (RuntimeException e) {
+            // TOML 语法错误会抛 IllegalStateException 的包装 —— 不能让它把配置打回默认值
+            lastError = e.getMessage() == null ? e.toString() : e.getMessage();
+            return false;
+        }
+    }
 
-        this.messageEnabled = config.getBoolean("Message.enabled");
-        this.joinEnabled = config.getBoolean("Join.enabled");
-        this.leaveEnabled = config.getBoolean("Leave.enabled");
-        this.kickEnabled = config.getBoolean("Kick.enabled");
-        this.changeEnabled = config.getBoolean("Server-change.enabled");
+    /** 上一次 reload 失败的理由（成功时是 null），给 /vmessage reload 的提示用。 */
+    String lastError() {
+        final String e = lastError;
+        lastError = null;
+        return e;
+    }
 
-        this.aliases = config.getTable("Aliases");
+    /** 配置文件本身（自动热重载靠它比对修改时间）。 */
+    public static File getConfigFile() {
+        return file;
+    }
 
-        this.messagecmd = config.getList("Message.commands");
-        this.joincmd = config.getList("Join.commands");
-        this.leavecmd = config.getList("Leave.commands");
-        this.kickcmd = config.getList("Kick.commands");
-        this.changecmd = config.getList("Server-change.commands");
+    /** 改了 config.toml 就自动重载，不用敲命令。 */
+    public boolean isAutoReload() {
+        return this.autoReload;
+    }
 
-        this.minimessage = config.getBoolean("Message-format.minimessage");
-        this.all = config.getBoolean("Message.all", false);
-
-        this.papiEnabled = config.getBoolean("Message.papiproxybridge", true);
-        this.papiCacheMillis = config.getLong("Message.papi-cache-millis", 30000L);
-        this.papiTimeoutMillis = config.getLong("Message.papi-timeout-millis", 1500L);
-        this.papiRetryTimes = config.getLong("Message.papi-retry-times", 0L).intValue();
-
-        this.messageColors = normalizeColorMode(config.getString("Message.message-colors", "strip"));
-        this.namedColors = readNamedColors(config);
-
-        this.customMeta = readCustomMeta(config);
-
-        this.noPapiFormat = trimToNull(config.getString("Message.no-papi-format", ""));
-        this.readBridgeBlacklist = config.getBoolean("Message.read-bridge-blacklist", true);
-        this.noPapiServers.clear();
-        this.noPapiServers.addAll(readServerList(config, "Message.no-papi-servers"));
-        mergeBridgeBlacklist();
+    /** 自动重载的检查间隔（秒）。 */
+    public long getAutoReloadIntervalSeconds() {
+        return this.autoReloadIntervalSeconds;
     }
 }

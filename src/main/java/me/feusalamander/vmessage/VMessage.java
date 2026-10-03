@@ -13,6 +13,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
+import java.io.File;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
@@ -36,6 +37,11 @@ public class VMessage {
     public Listeners listeners;
     private static boolean discord;
     private static PapiBridge papi;
+    private Configuration configuration;
+    /** 自动热重载：记住上次的修改时间，变了才重读 */
+    private long lastConfigModified;
+    /** 上一次重载失败的原因，给 /vmessage reload 的失败提示用。 */
+    private volatile String lastReloadError;
 
     @Inject
     public VMessage(ProxyServer proxy, Logger logger, Metrics.Factory metricsFactory, @DataDirectory Path dataDirectory) {
@@ -48,10 +54,33 @@ public class VMessage {
 
     @Subscribe
     private void onProxyInitialization(ProxyInitializeEvent event) {
-        Configuration configuration = Configuration.load(dataDirectory);
+        configuration = Configuration.load(dataDirectory);
         if (configuration == null) {
             return;
         }
+        createPapi();
+        metricsFactory.make(this, 16527);
+        listeners = new Listeners(proxy, configuration);
+        proxy.getEventManager().register(this, listeners);
+        CommandManager commandManager = proxy.getCommandManager();
+        CommandMeta commandMeta = commandManager.metaBuilder("Vmessage")
+                .plugin(this)
+                .build();
+        SimpleCommand command = new ReloadCommand(this);
+        commandManager.register(commandMeta, command);
+        CommandMeta sendmeta = commandManager.metaBuilder("sendall")
+                .plugin(this)
+                .build();
+        SimpleCommand sendcommand = new SendCommand(this);
+        commandManager.register(sendmeta, sendcommand);
+        logger.info("Vmessage by FeuSalamander is working !");
+        reportConfig();
+        // 自动热重载：改了 config.toml 不用敲命令（默认关，config.toml 里 auto-reload = true 打开）
+        startAutoReload();
+    }
+
+    /** 按当前配置重建 PAPIProxyBridge 桥接 —— reload 之后 cache/timeout/retry 才能跟着变。 */
+    private void createPapi() {
         papi = PapiBridge.create(logger, configuration.getPapiCacheMillis(),
                 configuration.getPapiTimeoutMillis(), configuration.getPapiRetryTimes());
         if (papi != null) {
@@ -62,27 +91,70 @@ public class VMessage {
                     .delay(5, TimeUnit.SECONDS)
                     .schedule();
         }
-        metricsFactory.make(this, 16527);
-        listeners = new Listeners(proxy, configuration);
-        proxy.getEventManager().register(this, listeners);
-        CommandManager commandManager = proxy.getCommandManager();
-        CommandMeta commandMeta = commandManager.metaBuilder("Vmessage")
-                .plugin(this)
-                .build();
-        SimpleCommand command = new ReloadCommand(configuration);
-        commandManager.register(commandMeta, command);
-        CommandMeta sendmeta = commandManager.metaBuilder("sendall")
-                .plugin(this)
-                .build();
-        SimpleCommand sendcommand = new SendCommand(this);
-        commandManager.register(sendmeta, sendcommand);
-        logger.info("Vmessage by FeuSalamander is working !");
+    }
+
+    /** 打印当前生效的关键配置（起服和每次 reload 后都打一遍，方便确认到底生效了没）。 */
+    private void reportConfig() {
         logger.info("[vmessage] 聊天内容颜色码处理：" + configuration.getMessageColors()
                 + "（strip=剥掉 / parse=解析 / keep=原样；有 vmessage.color 权限的玩家一律解析）");
         if (!configuration.getNoPapiServers().isEmpty()) {
             logger.info("[vmessage] 这些服收不到 PAPI 变量（走 no-papi-format）："
                     + String.join(", ", configuration.getNoPapiServers()));
         }
+    }
+
+    /** 定时比对 config.toml 的修改时间，变了就自动重载。 */
+    private void startAutoReload() {
+        final File file = Configuration.getConfigFile();
+        if (file == null) {
+            return;
+        }
+        lastConfigModified = file.lastModified();
+        final long seconds = configuration.getAutoReloadIntervalSeconds();
+        proxy.getScheduler().buildTask(this, () -> {
+            if (!configuration.isAutoReload()) {
+                // 中途把 auto-reload 关掉了：任务还在跑，但什么都不做
+                lastConfigModified = file.lastModified();
+                return;
+            }
+            final long now = file.lastModified();
+            if (now == lastConfigModified) {
+                return;
+            }
+            lastConfigModified = now;
+            if (reload()) {
+                logger.info("[vmessage] 检测到 config.toml 已修改，已自动重载。");
+            }
+        }).repeat(Math.max(1L, seconds), TimeUnit.SECONDS).schedule();
+        if (configuration.isAutoReload()) {
+            logger.info("[vmessage] 自动热重载已开启：每 " + seconds + " 秒检查一次 config.toml。");
+        }
+    }
+
+    /**
+     * 热重载：重读 config.toml、重建桥接、打印新配置。
+     *
+     * @return true = 生效；false = 文件读不出来（TOML 写坏了），旧配置原样保留
+     */
+    public boolean reload() {
+        if (configuration == null) {
+            return false;
+        }
+        if (!configuration.reload()) {
+            lastReloadError = configuration.lastError();
+            logger.warn("[vmessage] config.toml 读不出来，已保留旧配置：" + lastReloadError);
+            return false;
+        }
+        lastReloadError = null;
+        // papiproxybridge 开关 / 缓存 / 超时 / 重试次数都可能改了，重建才生效
+        createPapi();
+        reportConfig();
+        return true;
+    }
+
+    /** 上一次重载失败的原因（成功时为 null）。 */
+    public String lastReloadError() {
+        return lastReloadError;
     }
     public static boolean isDiscord(){
         return discord;

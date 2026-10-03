@@ -16,6 +16,16 @@
 #   直接在 format 里写 %playerTitle_use%、%legendaryguild_guild% 即可，
 #   由玩家【所在的那个子服】的 PAPI 现算，代理端不用预先同步任何数据。
 
+# ---- 热重载（改完这个文件要不要手动敲命令）----
+# false（默认）：改完在控制台或游戏里执行 /vmessage reload（需要 vmessage.reload 权限）
+# true         ：插件定时检查文件修改时间，改了就自动重载，不用敲命令、不用重启
+# ⚠️ 两种方式的重载范围是一样的：只有本文件里的东西能热更新。
+#    子服插件的增删、PAPIProxyBridge 自己的 settings.yml、LuckPerms 权限变化都不归它管
+#    （PPB 那份黑名单要重启 PPB 才会重新读）。
+auto-reload = false
+# 自动重载的检查间隔（秒），最小 1
+auto-reload-interval-seconds = 5
+
 [Message-format]
 # false = 用 & 颜色码(+ &#RRGGBB hex)；true = MiniMessage
 # 必须保持 false：LuckPerms 里存的是 & 颜色码，MiniMessage 模式会原样显示
