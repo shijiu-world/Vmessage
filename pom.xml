@@ -6,14 +6,15 @@
 
     <groupId>Vmessage</groupId>
     <artifactId>Vmessage</artifactId>
-    <version>1.6.1</version>
+    <version>1.6.2-velocity4fix-multimeta</version>
     <packaging>jar</packaging>
 
     <name>Vmessage</name>
 
     <description>A velocity plugin that creates a global chat for the network</description>
     <properties>
-        <java.version>11</java.version>
+        <!-- Velocity 3.4+ / 4.x 都要求 Java 17 -->
+        <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 

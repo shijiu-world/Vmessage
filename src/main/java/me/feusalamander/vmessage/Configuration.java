@@ -6,7 +6,9 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public final class Configuration {
@@ -22,6 +24,10 @@ public final class Configuration {
     private boolean changeEnabled;
     private boolean minimessage;
     private boolean all;
+    private boolean papiEnabled;
+    private long papiCacheMillis;
+    private long papiTimeoutMillis;
+    private int papiRetryTimes;
     private Toml config;
     private static File file;
     private List<String> messagecmd;
@@ -29,8 +35,8 @@ public final class Configuration {
     private List<String> leavecmd;
     private List<String> kickcmd;
     private List<String> changecmd;
-    private String custom1;
-    private String custom2;
+    // 改版：Custom-Meta 支持任意多个槽位，key = 占位符名(对应 #key#)，value = LuckPerms meta 键
+    private Map<String, String> customMeta;
     private Toml aliases;
 
     Configuration(Toml config) {
@@ -56,9 +62,39 @@ public final class Configuration {
         minimessage = config.getBoolean("Message-format.minimessage");
         all = config.getBoolean("Message.all", false);
 
-        custom1 = config.getString("Custom-Meta.custom1", "");
-        custom2 = config.getString("Custom-Meta.custom2", "");
+        papiEnabled = config.getBoolean("Message.papiproxybridge", true);
+        papiCacheMillis = config.getLong("Message.papi-cache-millis", 30000L);
+        papiTimeoutMillis = config.getLong("Message.papi-timeout-millis", 1500L);
+        papiRetryTimes = config.getLong("Message.papi-retry-times", 0L).intValue();
+
+        customMeta = readCustomMeta(config);
         this.config = config;
+    }
+
+    /**
+     * 读 [Custom-Meta] 这张表。表里每个 "占位符名 = meta键" 都会生成一个 #占位符名#。
+     * 例：
+     *   [Custom-Meta]
+     *   custom1 = "title"
+     *   custom2 = "guild"
+     *   level   = "level"
+     * → 可用 #custom1# #custom2# #level#，个数不限。
+     */
+    private static Map<String, String> readCustomMeta(final Toml config) {
+        final Map<String, String> map = new LinkedHashMap<>();
+        final Toml table = config.getTable("Custom-Meta");
+        if (table == null) {
+            return map;
+        }
+        for (final Map.Entry<String, Object> entry : table.toMap().entrySet()) {
+            if (entry.getValue() instanceof String) {
+                final String metaKey = ((String) entry.getValue()).trim();
+                if (!metaKey.isEmpty()) {
+                    map.put(entry.getKey(), metaKey);
+                }
+            }
+        }
+        return map;
     }
 
     static Configuration load(Path dataDirectory) {
@@ -150,12 +186,23 @@ public final class Configuration {
     public Toml getAliases() {
         return aliases;
     }
-    public String getCustom1() {
-		return this.custom1;
-	}
-    public String getCustom2() {
-		return this.custom2;
-	}
+    public Map<String, String> getCustomMeta() {
+        return this.customMeta;
+    }
+    /** 是否启用 PAPIProxyBridge 解析（需要代理端和子服都装了该插件）。 */
+    public boolean isPapiEnabled() {
+        return this.papiEnabled;
+    }
+    public long getPapiCacheMillis() {
+        return this.papiCacheMillis;
+    }
+    public long getPapiTimeoutMillis() {
+        return this.papiTimeoutMillis;
+    }
+    /** 解析失败时的重试次数。默认 0：失败不进缓存，多重试一次就多等一轮超时。 */
+    public int getPapiRetryTimes() {
+        return this.papiRetryTimes;
+    }
 	
     void reload(){
         config = config.read(file);
@@ -182,7 +229,6 @@ public final class Configuration {
         this.minimessage = config.getBoolean("Message-format.minimessage");
         this.all = config.getBoolean("Message.all", false);
 
-        this.custom1 = config.getString("Custom-Meta.custom1");
-        this.custom2 = config.getString("Custom-Meta.custom2");
+        this.customMeta = readCustomMeta(config);
     }
 }

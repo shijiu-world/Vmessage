@@ -18,8 +18,16 @@ import net.luckperms.api.cacheddata.CachedMetaData;
 import ooo.foooooooooooo.velocitydiscord.VelocityDiscord;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @SuppressWarnings({"UnstableApiUsage", "deprecation"})
 public final class Listeners {
@@ -28,6 +36,10 @@ public final class Listeners {
             .hexColors()
             .build();
     public static final MiniMessage mm = MiniMessage.miniMessage();
+    // 内建占位符：这些由插件自己填，不能拿去当 meta 键查
+    private static final Set<String> BUILTIN = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "player", "prefix", "suffix", "message", "server", "oldserver")));
+    private static final Pattern PLACEHOLDER = Pattern.compile("#([A-Za-z0-9_\\-]+)#");
     private LuckPerms luckPermsAPI;
     private final Configuration configuration;
     private final ProxyServer proxyServer;
@@ -288,8 +300,6 @@ public final class Listeners {
         final CachedMetaData data = luckPermsAPI.getPlayerAdapter(Player.class).getMetaData(p);
         final String prefix = data.getPrefix();
         final String suffix = data.getSuffix();
-        final String custom1 = data.getMetaValue(configuration.getCustom1());
-        final String custom2 = data.getMetaValue(configuration.getCustom2());
 
         if (message.contains("#prefix#") && prefix != null) {
             message = message.replace("#prefix#", prefix);
@@ -297,14 +307,62 @@ public final class Listeners {
         if (message.contains("#suffix#") && suffix != null) {
             message = message.replace("#suffix#", suffix);
         }
-        if (message.contains("#custom1#") && custom1 != null) {
-            message = message.replace("#custom1#", custom1);
+
+        // ① 显式映射：[Custom-Meta] 里写的 "占位符名 = meta键"（可选，用来起别名）
+        final Map<String, String> values = new LinkedHashMap<>();
+        final Set<String> resolved = new HashSet<>();
+        for (final Map.Entry<String, String> entry : configuration.getCustomMeta().entrySet()) {
+            final String placeholder = "#" + entry.getKey() + "#";
+            resolved.add(entry.getKey());
+            if (!message.contains(placeholder)) {
+                continue;
+            }
+            final String value = metaValue(data, entry.getValue());
+            if (value != null) {
+                values.put(placeholder, value);
+            }
         }
-        if (message.contains("#custom2#") && custom2 != null) {
-            message = message.replace("#custom2#", custom2);
+        for (final Map.Entry<String, String> entry : values.entrySet()) {
+            message = message.replace(entry.getKey(), entry.getValue());
         }
-        message = message.replace("#prefix#", "").replace("#suffix#", "").replace("#custom1#","").replace("#custom2#","");
-        return message;
+
+        // ② 直连：剩下的 #xxx# 直接当作 LuckPerms 的 meta 键名去查，不用再配 [Custom-Meta]
+        final Map<String, String> auto = new LinkedHashMap<>();
+        final Matcher finder = PLACEHOLDER.matcher(message);
+        while (finder.find()) {
+            final String name = finder.group(1);
+            if (BUILTIN.contains(name) || resolved.contains(name) || auto.containsKey(name)) {
+                continue;
+            }
+            final String value = metaValue(data, name);
+            auto.put(name, value == null ? "" : value);
+        }
+        for (final Map.Entry<String, String> entry : auto.entrySet()) {
+            message = message.replace("#" + entry.getKey() + "#", entry.getValue());
+        }
+
+        // ③ 兜底：取不到值的占位符一律抹成空串，不会把 #xxx# 露给玩家
+        message = message.replace("#prefix#", "").replace("#suffix#", "");
+        final Matcher cleaner = PLACEHOLDER.matcher(message);
+        final StringBuffer sb = new StringBuffer();
+        while (cleaner.find()) {
+            final String name = cleaner.group(1);
+            cleaner.appendReplacement(sb, BUILTIN.contains(name) ? Matcher.quoteReplacement(cleaner.group()) : "");
+        }
+        cleaner.appendTail(sb);
+        return sb.toString();
+    }
+
+    /**
+     * LuckPerms 的 meta 键在入库时会被强制小写，这里原样查一次、再小写查一次，两种写法都能命中。
+     */
+    private static String metaValue(final CachedMetaData data, final String key) {
+        final String direct = data.getMetaValue(key);
+        if (direct != null) {
+            return direct;
+        }
+        final String lower = key.toLowerCase(Locale.ROOT);
+        return lower.equals(key) ? null : data.getMetaValue(lower);
     }
     public void message(final Player p, final String m) {
         String actualservername = p.getCurrentServer().orElseThrow().getServerInfo().getName();
@@ -330,6 +388,20 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = luckperms(message, p);
         }
+        // PAPIProxyBridge：把 %xxx% 交给玩家【所在子服】的 PlaceholderAPI 解析（异步）。
+        // 这一步在 #message# 替换【之前】做 —— 玩家输入的聊天内容不会被当成占位符解析。
+        final PapiBridge papi = VMessage.papi();
+        if (papi != null && configuration.isPapiEnabled() && message.indexOf('%') >= 0) {
+            papi.format(message, p.getUniqueId()).thenAccept(resolved ->
+                    // PAPI 返回的是 § 码，而 Vmessage 用 & 序列化
+                    deliver(p, PapiBridge.stripUnresolved(resolved.replace('§', '&')), m, permission));
+            return;
+        }
+        // 没装桥接 / 手动关掉时也要清一遍，否则 format 里的 %xxx% 会原样显示给玩家
+        deliver(p, PapiBridge.stripUnresolved(message), m, permission);
+    }
+
+    private void deliver(final Player p, String message, final String m, final boolean permission) {
         if(permission)message = message.replace("#message#", m);
         Component finalMessage;
         if (configuration.isMinimessageEnabled()) {
@@ -337,7 +409,7 @@ public final class Listeners {
         } else {
             finalMessage = SERIALIZER.deserialize(message);
         }
-        if(!permission)finalMessage = finalMessage.replaceText("#message#", Component.text(m));
+        if(!permission)finalMessage = finalMessage.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder().matchLiteral("#message#").replacement(Component.text(m)).build());
         String discordRaw;
         if(VMessage.isDiscord()){
             String dump = "";

@@ -14,6 +14,7 @@ import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 
 @Plugin(
         id = "vmessage",
@@ -23,7 +24,8 @@ import java.nio.file.Path;
         authors = {"FeuSalamander"},
         dependencies = {
                 @Dependency(id = "luckperms", optional = true),
-                @Dependency(id = "discord",optional = true)
+                @Dependency(id = "discord",optional = true),
+                @Dependency(id = "papiproxybridge", optional = true)
         }
 )
 public class VMessage {
@@ -33,6 +35,7 @@ public class VMessage {
     private final Path dataDirectory;
     public Listeners listeners;
     private static boolean discord;
+    private static PapiBridge papi;
 
     @Inject
     public VMessage(ProxyServer proxy, Logger logger, Metrics.Factory metricsFactory, @DataDirectory Path dataDirectory) {
@@ -48,6 +51,16 @@ public class VMessage {
         Configuration configuration = Configuration.load(dataDirectory);
         if (configuration == null) {
             return;
+        }
+        papi = PapiBridge.create(logger, configuration.getPapiCacheMillis(),
+                configuration.getPapiTimeoutMillis(), configuration.getPapiRetryTimes());
+        if (papi != null) {
+            logger.info("[vmessage] 检测到 PAPIProxyBridge —— format 里可直接用子服 PAPI 变量 (%xxx%)。");
+            // 它的 API 实例不一定在 vmessage 初始化时就已注册，起服后复查一次便于排查
+            proxy.getScheduler().buildTask(this, () -> logger.info("[vmessage] PAPIProxyBridge 状态："
+                            + (papi.available() ? "已连接" : "未取到实例（检查子服是否装了 PAPIProxyBridge-Bukkit）")))
+                    .delay(5, TimeUnit.SECONDS)
+                    .schedule();
         }
         metricsFactory.make(this, 16527);
         listeners = new Listeners(proxy, configuration);
@@ -67,5 +80,9 @@ public class VMessage {
     }
     public static boolean isDiscord(){
         return discord;
+    }
+    /** PAPIProxyBridge 桥接实例，没装插件时为 null。 */
+    public static PapiBridge papi(){
+        return papi;
     }
 }

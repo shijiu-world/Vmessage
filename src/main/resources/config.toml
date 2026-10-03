@@ -1,68 +1,85 @@
-#you can use placeholders from placeholder api
+# Vmessage 1.6.2 (patched: Velocity 4.x 兼容 + Custom-Meta 支持任意多个槽位)
+#
+# 可用占位符：
+#   #player#  玩家名
+#   #prefix#  LuckPerms 前缀
+#   #suffix#  LuckPerms 后缀
+#   #message# 聊天内容
+#   #server#  当前服务器名（走 [Aliases] 别名）
+#   #oldserver# 上一个服务器名
+#
+#   除了上面这几个内建占位符，format 里出现的任何 #xxx# 都会**直接当作 LuckPerms 的 meta 键名**去查。
+#   也就是说 meta 键叫 title，你就写 #title#；叫 guild 就写 #guild#，不用再在 [Custom-Meta] 里登记。
+#   [Custom-Meta] 只在你想起别名（比如想写 #称号# 但 meta 键是 title）时才需要。
+#
+# ★ %xxx% = 子服 PlaceholderAPI 变量（需要装 PAPIProxyBridge，见下面 [Message] 段）
+#   直接在 format 里写 %playerTitle_use%、%legendaryguild_guild% 即可，
+#   由玩家【所在的那个子服】的 PAPI 现算，代理端不用预先同步任何数据。
+
 [Message-format]
-#set it to true to use MiniMessage and false to use hex colors
+# false = 用 & 颜色码(+ &#RRGGBB hex)；true = MiniMessage
+# 必须保持 false：LuckPerms 里存的是 & 颜色码，MiniMessage 模式会原样显示
 minimessage = false
+
 [Message]
-#place holders:
-#- "#player#" : return the player name
-#- "#prefix#" : return the player's luckperms prefix
-#- "#suffix#" : return the player's luckperms suffix
-#- "#message#" : return the player's message
-#- "#server#" : return the player's server name
-#- "#custom1#" : return the player's custom defined luckperms meta keys
-#- "#custom2#" : return the player's custom defined luckperms meta keys
-format = "&a(#server#) #prefix# #player# &8&l> &r#message#"
-all = false #if the formated message is sent even in the server where the player is located (can cause some issues with other plugins)
+# ★ 关键：false = 不拦原始聊天，只把格式化消息发给「除发送者所在服以外」的子服
+#   （与线上 velocity-chat 的 passthrough=false 行为一致，子服插件不受影响）
+#   改成 true 会 deny 原始事件并全服重发，1.19.1+ 会踢人，别开
+format = "&8[&b#server#&8] &r%playerTitle_use% [&6%legendaryguild_guild%&r] #prefix#&f#player#&7: &r#message#"
+all = false
 commands = []
 enabled = true
+
+# ---- PAPIProxyBridge（子服 PlaceholderAPI 桥接）----
+# 装了它，代理端就能直接读子服 PAPI 变量，format 里写 %xxx% 就行：
+#   代理端 plugins/ 放 PAPIProxyBridge-Velocity-*.jar
+#   各子服  plugins/ 放 PAPIProxyBridge-Bukkit-*.jar（子服本身要有 PlaceholderAPI）
+# 不需要再往 LuckPerms meta 里同步数据，也不需要代理端 LuckPerms 切 MySQL。
+papiproxybridge = true
+# 解析结果缓存多久（毫秒）。PAPI 结果会缓存，避免每条消息都走一次网络
+papi-cache-millis = 30000
+# 等子服响应多久（毫秒），超时就当作没解析，把残余 %xxx% 抹成空串
+papi-timeout-millis = 1500
+# 失败重试次数。默认 0：失败的结果不进缓存，重试一次就多等一轮超时，聊天会明显卡顿。
+# 没装 PAPIProxyBridge-Bukkit 的子服（比如 killer）应该在代理端 PAPIProxyBridge 的
+# settings.yml 里配进 serverList 黑名单，那样一次请求都不会发，比调这个更快。
+papi-retry-times = 0
+# 变量取不到时（子服没装对应插件、或没装桥接），%xxx% 会被抹成空串；
+# 如果它是被方括号包着的，例如 [&6%legendaryguild_guild%&r]，连括号一起删掉，不会留下空的 []。
+
 [Join]
-#place holders:
-#- "#player#" : return the player name
-#- "#server#" : return the new player's server name
-#- "#prefix#" : return the player's luckperms prefix
-#- "#suffix#" : return the player's luckperms suffix
-#- "#custom1#" : return the player's custom defined luckperms meta keys
-#- "#custom2#" : return the player's custom defined luckperms meta keys
-format = "&7#prefix# #player# &ejoined &7#server#"
-commands = [] #The proxy commands which are executed (no / in the commands)
+format = "&7#prefix#&f#player# &e加入了 &a#server#"
+commands = []
 enabled = true
+
 [Leave]
-#place holders:
-#- "#player#" : return the player name
-#- "#oldserver#" : return the previous player's server name
-#- "#prefix#" : return the player's luckperms prefix
-#- "#suffix#" : return the player's luckperms suffix
-#- "#custom1#" : return the player's custom defined luckperms meta keys
-#- "#custom2#" : return the player's custom defined luckperms meta keys
-format = "#&7prefix# #player# &eleft &7#oldserver#"
+format = "&7#prefix#&f#player# &e离开了 &c#oldserver#"
 commands = []
 enabled = true
+
 [Kick]
-#place holders:
-#- "#player#" : return the player name
-#- "#oldserver#" : return the previous player's server name
-#- "#prefix#" : return the player's luckperms prefix
-#- "#suffix#" : return the player's luckperms suffix
-#- "#custom1#" : return the player's custom defined luckperms meta keys
-#- "#custom2#" : return the player's custom defined luckperms meta keys
-format = "&7#prefix# #player# &ewas kicked from &7#oldserver#"
-commands = [] #The proxy commands which are executed (no / in the commands)
-enabled = true
-[Server-change]
-#place holders:
-#- "#player#" : return the player name
-#- "#prefix#" : return the player's luckperms prefix
-#- "#suffix#" : return the player's luckperms suffix
-#- "#oldserver#" : return the previous player's server name
-#- "#server#" : return the new player's server name
-#- "#custom1#" : return the player's custom defined luckperms meta keys
-#- "#custom2#" : return the player's custom defined luckperms meta keys
-format = "&7#prefix# #player# &eleft &c#oldserver# &eto join &a#server#"
+format = "&7#prefix#&f#player# &c被踢出 &7#oldserver#"
 commands = []
 enabled = true
+
+[Server-change]
+format = "&7#prefix#&f#player# &e从 &c#oldserver# &e切换到 &a#server#"
+commands = []
+enabled = true
+
 [Aliases]
-servername = "Server Name"
+lobby = "大厅"
+survival = "生存"
+survival2 = "生存二服"
+industry = "生电"
+minigame = "小游戏"
+bedwars = "起床"
+starvalley = "星露谷"
+killer = "竞技"
+
 [Custom-Meta]
-#Enables definition of Custom Luckperms Meta Placeholders
-custom1 = ""
-custom2 = ""
+# 【可选】只有想起别名时才需要写这里：左边 = format 里的占位符名，右边 = 实际的 LuckPerms meta 键
+# 不写也行 —— format 里出现任何 #xxx# 都会直接拿 xxx 当 meta 键去查
+# 例：下面这两行让你可以写 #称号# / #公会#，而不用 #title# / #guild#
+# 称号 = "title"
+# 公会 = "guild"
