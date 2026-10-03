@@ -55,6 +55,33 @@ papi-retry-times = 0
 #   keep  = 原样保留，&4 会当成普通字符显示出来（一般别用）
 message-colors = "strip"
 # 有 vmessage.color 权限的玩家，无论上面配什么都一律解析颜色码。
+#
+# parse 模式支持的写法（对齐 CMI/CMILib 的 CMIChatColor）：
+#   &4  &c  &l  &r ...        传统 16 色 + k/l/m/n/o/r
+#   &#FF0000  &#F00           hex（3 位会自动展开成 6 位）
+#   &x&F&F&0&0&0&0            1.16 原生 hex 写法，会转成 &#FF0000
+#   {#FF0000}  {#F00}         CMI 的花括号 hex
+#   {#brown}                  命名色 —— 查下面那张表，查不到就摘掉
+#   {#FF0000>}文字{#0000FF<}  渐变 —— 代理端算不出逐字渐变，退化为起始色，结束标记摘掉
+#   {@字体}                   自定义字体 —— legacy 表达不了，摘掉
+# 也就是说：玩家手打的这些写法都会被吃掉，不会以字面量出现在别人屏幕上。
+
+# CMI 风格命名色对照表。CMI 的 /cmi chatcolor 里能选 {#brown} 这类名字，
+# 服里用到了哪些就往这儿加（键不区分大小写，值写成 "#RRGGBB" 或 "#RGB" 都行）。
+# 表里没有的名字，玩家写 {#xxx} 会被当成无效标记摘掉。
+[Message.named-colors]
+brown = "#A52A2A"
+orange = "#FFA500"
+pink = "#FFC0CB"
+purple = "#800080"
+navy = "#000080"
+teal = "#008080"
+olive = "#808000"
+maroon = "#800000"
+lime = "#00FF00"
+cyan = "#00FFFF"
+silver = "#C0C0C0"
+beige = "#F5F5DC"
 # ⚠️ 这个权限要配在【代理端】的 LuckPerms 上；代理端 LP 若是独立 H2，子服给的权限读不到。
 #   想要「跟 CMI 一样的颜色权限控制」，可以等 LuckPerms 统一成同一个 MySQL 后，
 #   把 vmessage.color 给到和 cmi.colors.publicmessage.* 相同的那些组。

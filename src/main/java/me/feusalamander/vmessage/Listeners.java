@@ -40,9 +40,6 @@ public final class Listeners {
     private static final Set<String> BUILTIN = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "player", "prefix", "suffix", "message", "server", "oldserver")));
     private static final Pattern PLACEHOLDER = Pattern.compile("#([A-Za-z0-9_\\-]+)#");
-    /** 消息内容里的颜色码：&4 / §4 / &#FF0000 这类 */
-    private static final Pattern COLOR_CODE =
-            Pattern.compile("[&§](?:[0-9a-fA-Fk-oK-OrR]|#[0-9a-fA-F]{6})");
     /** 有这个权限的玩家，聊天内容里的颜色码会被解析（无视 message-colors 配置） */
     private static final String COLOR_PERMISSION = "vmessage.color";
     private LuckPerms luckPermsAPI;
@@ -410,7 +407,8 @@ public final class Listeners {
         final boolean mini = configuration.isMinimessageEnabled();
         // 玩家聊天内容里的颜色码怎么处理；有 vmessage.color 权限的人一律解析
         final String colorMode = p.hasPermission(COLOR_PERMISSION) ? "parse" : configuration.getMessageColors();
-        final String content = "strip".equals(colorMode) ? stripColors(m) : m;
+        final String content = "strip".equals(colorMode) ? ChatColors.strip(m) : m;
+        final Map<String, String> namedColors = configuration.getNamedColors();
         Component finalMessage;
         if (mini && permission) {
             // 开了 MiniMessage 且玩家有权限：消息内容直接参与解析（可以用 <red> 这类语法）
@@ -419,7 +417,7 @@ public final class Listeners {
             finalMessage = mini ? mm.deserialize(message.replace("§", "")) : SERIALIZER.deserialize(message);
             finalMessage = finalMessage.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder()
                     .matchLiteral("#message#")
-                    .replacement(messageComponent(mini, colorMode, content))
+                    .replacement(messageComponent(colorMode, content, namedColors))
                     .build());
         }
         String discordRaw;
@@ -450,16 +448,9 @@ public final class Listeners {
 
     }
 
-    /** 剥掉消息内容里的颜色码。对应 CMI 的 CleanUp：没颜色权限时把 &4 这类去掉，而不是把字面量显示出来。 */
-    private static String stripColors(final String s) {
-        return s == null ? "" : COLOR_CODE.matcher(s).replaceAll("");
-    }
-
-    /** 按 colorMode 决定消息内容怎么变成组件：parse 解析颜色码，strip / keep 都按纯文本处理。 */
-    private static Component messageComponent(final boolean mini, final String colorMode, final String content) {
-        if ("parse".equals(colorMode)) {
-            return mini ? mm.deserialize(content) : SERIALIZER.deserialize(content.replace('§', '&'));
-        }
-        return Component.text(content);
+    /** 按 colorMode 决定消息内容怎么变成组件：parse 解析颜色码（含 CMI 的 {#RRGGBB} 那套），strip / keep 都按纯文本处理。 */
+    private static Component messageComponent(final String colorMode, final String content,
+                                              final Map<String, String> namedColors) {
+        return ChatColors.component(colorMode, content, namedColors);
     }
 }
