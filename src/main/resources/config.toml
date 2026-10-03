@@ -7,23 +7,18 @@
 #   #message# 聊天内容
 #   #server#  当前服务器名（走 [Aliases] 别名）
 #   #oldserver# 上一个服务器名
-#
-#   除了上面这几个内建占位符，format 里出现的任何 #xxx# 都会**直接当作 LuckPerms 的 meta 键名**去查。
-#   也就是说 meta 键叫 title，你就写 #title#；叫 guild 就写 #guild#，不用再在 [Custom-Meta] 里登记。
-#   [Custom-Meta] 只在你想起别名（比如想写 #称号# 但 meta 键是 title）时才需要。
+#   [Custom-Meta] 定义的
 #
 # ★ %xxx% = 子服 PlaceholderAPI 变量（需要装 PAPIProxyBridge，见下面 [Message] 段）
 #   直接在 format 里写 %playerTitle_use%、%legendaryguild_guild% 即可，
 #   由玩家【所在的那个子服】的 PAPI 现算，代理端不用预先同步任何数据。
 
-# ---- 热重载（改完这个文件要不要手动敲命令）----
-# false（默认）：改完在控制台或游戏里执行 /vmessage reload（需要 vmessage.reload 权限）
-# true         ：插件定时检查文件修改时间，改了就自动重载，不用敲命令、不用重启
-# ⚠️ 两种方式的重载范围是一样的：只有本文件里的东西能热更新。
-#    子服插件的增删、PAPIProxyBridge 自己的 settings.yml、LuckPerms 权限变化都不归它管
-#    （PPB 那份黑名单要重启 PPB 才会重新读）。
+# 热重载
+# false - 改完在控制台或游戏里执行 /vmessage reload（需要 vmessage.reload 权限）
+# true  - 插件定时检查文件修改时间，改了就自动重载，不用敲命令、不用重启
 auto-reload = false
-# 自动重载的检查间隔（秒），最小 1
+
+# 自动重载的检查间隔（秒），最小 1 秒
 auto-reload-interval-seconds = 5
 
 [Message-format]
@@ -40,62 +35,44 @@ all = false
 commands = []
 enabled = true
 
-# ---- PAPIProxyBridge（子服 PlaceholderAPI 桥接）----
-# 装了它，代理端就能直接读子服 PAPI 变量，format 里写 %xxx% 就行：
-#   代理端 plugins/ 放 PAPIProxyBridge-Velocity-*.jar
-#   各子服  plugins/ 放 PAPIProxyBridge-Bukkit-*.jar（子服本身要有 PlaceholderAPI）
-# 不需要再往 LuckPerms meta 里同步数据，也不需要代理端 LuckPerms 切 MySQL。
+# 是否支持读取子服 PAPI 变量
+# 代理端需装 PAPIProxyBridge-Velocity-*.jar
+# 各子服需装 PAPIProxyBridge-Bukkit-*.jar
 papiproxybridge = true
 
-# ---- 给「没有桥接」的子服单独一套格式 ----
-# 有些子服装不了 PAPIProxyBridge-Bukkit（比如 killer 连 PlaceholderAPI 都没有），
-# 它们收不到 %xxx% 的解析结果。这些服可以走另一套格式：
-#
-#   no-papi-format  备用格式。里面只能写 Vmessage 自己的占位符
-#                   （#player# #prefix# #suffix# #server# #message# 以及任意 #meta#），
-#                   %xxx% 一律不解析、直接抹掉。留空 = 不启用，那些服仍用上面的 format。
-#   no-papi-servers 哪些服用备用格式。填 velocity.toml 里注册的服务器名（不是 [Aliases] 的中文名）。
-#   read-bridge-blacklist
-#                   true = 自动把代理端 PAPIProxyBridge 的 settings.yml 里
-#                   「serverListMode: BLACKLIST」那份 serverList 并进来 —— 名单只维护一处就够。
-#                   （names 是大小写不敏感的；两个来源取并集）
-no-papi-format = "&8[&b#server#&8] &r#prefix#&f#player#&7: &r#message#"
-no-papi-servers = []
-read-bridge-blacklist = true
-#
-# 分发规则（%xxx% 是在【发送者所在服】算的，所以两端都要看）：
-#   发送者在有桥接的服说话 → 名单内的服收 no-papi-format，其余服收 format
-#   发送者在名单内的服说话 → 所有服都收 no-papi-format（这种时候 %xxx% 本来就取不到）
-#   no-papi-format 留空   → 名单内的服也收 format，只是 %xxx% 被抹掉
-# 备用格式里写 %xxx% 没用 —— 它从不走桥接，残余的 %xxx% 会被直接抹掉。
-# 解析结果缓存多久（毫秒）。PAPI 结果会缓存，避免每条消息都走一次网络往返。
-#
-# 缓存是【按玩家隔离】的：键 =（说话玩家 UUID + 目标玩家 UUID + 所在服务器名），
-# 所以 %playerTitle_use%、%legendaryguild_guild% 这种「人人不同」的变量不会串号，
-# 每个人各自一份。缓存只在玩家下线时清掉（切服不用清 —— 服务器名是键的一部分）。
-#
-# 真正要权衡的是【变更延迟】：玩家刚换称号 / 刚退公会，最多要等这么久，
-# 跨服聊天里才会显示新的。想要称号改完立刻生效就调小（比如 3000）。
-# 设 0 = 完全不缓存，每条消息都实时问一次子服 —— 最准，但每条都要一次网络往返，
-# 子服卡顿时聊天会跟着慢。
-papi-cache-millis = 30000
-# 等子服响应多久（毫秒），超时就当作没解析，把残余 %xxx% 抹成空串
-papi-timeout-millis = 1500
-# 失败重试次数。默认 0：失败的结果不进缓存，重试一次就多等一轮超时，聊天会明显卡顿。
-# 没装 PAPIProxyBridge-Bukkit 的子服（比如 killer）应该在代理端 PAPIProxyBridge 的
-# settings.yml 里配进 serverList 黑名单，那样一次请求都不会发，比调这个更快。
-papi-retry-times = 0
-# 变量取不到时（子服没装对应插件、或没装桥接），%xxx% 会被抹成空串；
-# 如果它是被方括号包着的，例如 [&6%legendaryguild_guild%&r]，连括号一起删掉，不会留下空的 []。
+# 子服没装 PAPIProxyBridge-Bukkit 时，转发的格式
+# 里面只能写 Vmessage 自己的占位符
+# 不解析 %xxx%。若留空则使用 format。
+no-papi-format = "<#player#>: #message#"
 
-# ---- 玩家聊天内容里的颜色码（&4 这种）怎么处理 ----
-# 跨服消息是代理直接组装的，不经过子服 CMI，所以 CMI 那个
-# 「没 cmi.colors.publicmessage.* 权限就清掉颜色码」的规则对它无效。这里补上：
-#   strip = 剥掉颜色码（默认，跟 CMI 的 CleanUp 一致，不会显示 &4 这种字面量）
-#   parse = 解析颜色码，任何人在跨服聊天里都能上色（等于取消子服的颜色权限限制）
-#   keep  = 原样保留，&4 会当成普通字符显示出来（一般别用）
+# 没装 PAPIProxyBridge-Bukkit 的服务器列表
+# velocity.toml 里注册的服务器名
+no-papi-servers = []
+
+# 开启后，将 PAPIProxyBridge 的 serverList 合并进来
+read-bridge-blacklist = true
+
+# 缓存时间
+papi-cache-millis = 30000
+
+# 超时阈值（毫秒），超时后把 %xxx% 替换成空串
+papi-timeout-millis = 1500
+
+# 失败重试次数
+# 获取变量失败后，%xxx% 会被替换成空串；
+# 若被方括号包着的，例如 [&6%legendaryguild_guild%&r]，连[]一起删掉
+papi-retry-times = 0
+
+# strip = 去除颜色符号，且文本默认白色
+# parse = 转发的消息解析颜色码
+# keep  = 原样保留
+# vmessage.color 权限玩家，强制解析颜色
 message-colors = "strip"
-# 有 vmessage.color 权限的玩家，无论上面配什么都一律解析颜色码。
+
+# 需要哪个权限才能用渐变，例如 {#FF0000>}文字{#0000FF<}
+# 无此权限的玩家，渐变标记会被去除，只保留文本
+# 留空则所有玩家都能使用渐变
+gradient-permission = "vmessage.gradient"
 #
 # parse 模式支持的写法（对齐 CMI/CMILib 的 CMIChatColor）：
 #   &4  &c  &l  &r ...        传统 16 色 + k/l/m/n/o/r
@@ -103,14 +80,10 @@ message-colors = "strip"
 #   &x&F&F&0&0&0&0            1.16 原生 hex 写法，会转成 &#FF0000
 #   {#FF0000}  {#F00}         CMI 的花括号 hex
 #   {#brown}                  命名色 —— 查下面那张表，查不到就摘掉
-#   {#FF0000>}文字{#0000FF<}  渐变 —— 逐字插值染色（两端也能写 3 位 hex 或颜色名）
-#                             ⚠️ 渐变段内的 &l 这类格式码会被丢掉；颜色名查不到就退化成纯文字
-#   {@字体}                   自定义字体 —— legacy 表达不了，摘掉
-# 也就是说：玩家手打的这些写法都会被吃掉，不会以字面量出现在别人屏幕上。
+#   {#FF0000>}文字{#0000FF<}  渐变 —— 渐变段内的 &l 这类格式码会被丢掉；颜色名查不到就退化成纯文字
+#   {@字体}                   自定义字体 —— 无法实现，忽略
 
-# CMI 风格命名色对照表。CMI 的 /cmi chatcolor 里能选 {#brown} 这类名字，
-# 服里用到了哪些就往这儿加（键不区分大小写，值写成 "#RRGGBB" 或 "#RGB" 都行）。
-# 表里没有的名字，玩家写 {#xxx} 会被当成无效标记摘掉。
+# CMI 风格命名色对照表
 [Message.named-colors]
 brown = "#A52A2A"
 orange = "#FFA500"
@@ -124,57 +97,43 @@ lime = "#00FF00"
 cyan = "#00FFFF"
 silver = "#C0C0C0"
 beige = "#F5F5DC"
-# ⚠️ 这个权限要配在【代理端】的 LuckPerms 上；代理端 LP 若是独立 H2，子服给的权限读不到。
-#   想要「跟 CMI 一样的颜色权限控制」，可以等 LuckPerms 统一成同一个 MySQL 后，
-#   把 vmessage.color 给到和 cmi.colors.publicmessage.* 相同的那些组。
+
 
 [Join]
-format = "&7#prefix#&f#player# &e加入了 &a#server#"
+format = "&e#player# 加入了 #server#"
 commands = []
 enabled = true
 
 [Leave]
-format = "&7#prefix#&f#player# &e离开了 &c#oldserver#"
+format = "&e#player# 离开了 #oldserver#"
 commands = []
 enabled = true
 
 [Kick]
-format = "&7#prefix#&f#player# &c被踢出 &7#oldserver#"
+format = "&c#player# 被踢出 #oldserver#"
 commands = []
 enabled = true
 
 [Server-change]
-format = "&7#prefix#&f#player# &e从 &c#oldserver# &e切换到 &a#server#"
+format = "&e#player# 从 #oldserver# 切换到 #server#"
 commands = []
 enabled = true
 
 [Aliases]
 lobby = "大厅"
-survival = "生存"
-survival2 = "生存二服"
-industry = "生电"
-minigame = "小游戏"
+survival = "净土"
+survival2 = "乐土"
+industry = "工业"
+minigame = "游戏"
 bedwars = "起床"
-starvalley = "星露谷"
-killer = "竞技"
+killer = "杀手"
 
+# lp meta 信息别名
 [Custom-Meta]
-# 【可选】只有想起别名时才需要写这里：左边 = format 里的占位符名，右边 = 实际的 LuckPerms meta 键
-# 不写也行 —— format 里出现任何 #xxx# 都会直接拿 xxx 当 meta 键去查
-# 例：下面这两行让你可以写 #称号# / #公会#，而不用 #title# / #guild#
 # 称号 = "title"
 # 公会 = "guild"
 
-# ---- 聊天里的网址 ----
-# 玩家发的消息里出现 http(s) 链接时，只显示「[链接]」，点一下在浏览器打开，
-# 鼠标悬停能看到完整网址（跟 Markdown 的 [链接](url) 一个意思）。
-#   enabled  总开关
-#   text     链接显示的文字，支持 & 颜色码
-#   hover    悬停提示，{url} 会换成完整网址；留空则不显示提示
-#   pattern  识别网址用的正则（Java 语法）。默认只认 RFC 3986 里允许出现在网址中的字符，
-#            中文（含中文标点）天生就是链接的边界 ——
-#            用 https?://\S+ 的话「看这个 https://a.cn。后面还有话」会被整句当成链接。
-# ⚠️ 只处理【消息内容】：称号、公会那些属于格式串，不会被改。
+# 解析网址
 [Link]
 enabled = true
 text = "&9[链接]"

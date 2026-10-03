@@ -105,6 +105,10 @@ public class VMessage {
             logger.info("[vmessage] 这些服收不到 PAPI 变量（走 no-papi-format）："
                     + String.join(", ", configuration.getNoPapiServers()));
         }
+        final String gradient = configuration.getGradientPermission();
+        logger.info("[vmessage] 渐变：" + (gradient.isEmpty()
+                ? "所有人可用（gradient-permission 留空）"
+                : "需要权限 " + gradient + "（没有的人只看到文字）"));
         logger.info("[vmessage] 聊天里的网址："
                 + (configuration.isLinkEnabled()
                     ? "显示为 " + configuration.getLinkText() + "（可点击，悬停看完整网址）"

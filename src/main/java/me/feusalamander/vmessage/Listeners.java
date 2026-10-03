@@ -42,6 +42,16 @@ public final class Listeners {
     private static final Pattern PLACEHOLDER = Pattern.compile("#([A-Za-z0-9_\\-]+)#");
     /** 有这个权限的玩家，聊天内容里的颜色码会被解析（无视 message-colors 配置） */
     private static final String COLOR_PERMISSION = "vmessage.color";
+
+    /**
+     * 渐变要不要看权限。
+     * 配置的权限名为空 = 不限制（任何人都能用渐变）；否则没有这个权限的人，
+     * 渐变标记会被摘掉、文字留下 —— 既不漏标记，也拿不到渐变效果。
+     */
+    private boolean allowGradient(final Player p) {
+        final String perm = configuration.getGradientPermission();
+        return perm.isEmpty() || p.hasPermission(perm);
+    }
     private LuckPerms luckPermsAPI;
     private final Configuration configuration;
     private final ProxyServer proxyServer;
@@ -428,11 +438,13 @@ public final class Listeners {
         final String colorMode = p.hasPermission(COLOR_PERMISSION) ? "parse" : configuration.getMessageColors();
         final String content = "strip".equals(colorMode) ? ChatColors.strip(m) : m;
         final Map<String, String> namedColors = configuration.getNamedColors();
+        // 渐变单独一道权限（vmessage.gradient），跟 vmessage.color 分开控制
+        final boolean gradient = allowGradient(p);
         final Component mainComponent = mainFormat.isEmpty() ? null
-                : build(mainFormat, content, mini, permission, colorMode, namedColors);
+                : build(mainFormat, content, mini, permission, colorMode, namedColors, gradient);
         final Component altComponent = altFormat.isEmpty() ? mainComponent
                 : altFormat.equals(mainFormat) ? mainComponent
-                : build(altFormat, content, mini, permission, colorMode, namedColors);
+                : build(altFormat, content, mini, permission, colorMode, namedColors, gradient);
         if (VMessage.isDiscord()) {
             final String source = mainFormat.isEmpty() ? altFormat : mainFormat;
             String dump = "";
@@ -467,14 +479,14 @@ public final class Listeners {
     /** 把一条格式串变成组件：#message# 在这一步才换成玩家真正说的话。 */
     private Component build(final String message, final String content, final boolean mini,
                             final boolean permission, final String colorMode,
-                            final Map<String, String> namedColors) {
+                            final Map<String, String> namedColors, final boolean gradient) {
         // 消息内容先做成组件：开了 MiniMessage 且玩家有权限时按 MiniMessage 解析（可以用 <red> 这类语法），
         // 否则按 colorMode 处理（parse 才解析 & 颜色码）。
         // ⚠️ 不能像上游那样把 content 直接拼进格式串再一起反序列化 ——
         //    玩家说的话里带 < > 就会破坏格式串的结构，而且网址也会跟着被解析。
         Component body = mini && permission
                 ? mm.deserialize(content.replace("§", ""))
-                : messageComponent(colorMode, content, namedColors);
+                : messageComponent(colorMode, content, namedColors, gradient);
         // 网址做成 [链接]（可点击、悬停看完整网址）
         body = Linkify.apply(body, configuration);
         final Component parsed = mini ? mm.deserialize(message.replace("§", "")) : SERIALIZER.deserialize(message);
@@ -486,7 +498,7 @@ public final class Listeners {
 
     /** 按 colorMode 决定消息内容怎么变成组件：parse 解析颜色码（含 CMI 的 {#RRGGBB} 那套），strip / keep 都按纯文本处理。 */
     private static Component messageComponent(final String colorMode, final String content,
-                                              final Map<String, String> namedColors) {
-        return ChatColors.component(colorMode, content, namedColors);
+                                              final Map<String, String> namedColors, final boolean gradient) {
+        return ChatColors.component(colorMode, content, namedColors, gradient);
     }
 }

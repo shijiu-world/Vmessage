@@ -54,6 +54,9 @@ public final class ChatColors {
     /** 3 位简写 {@code &#RGB}：后面不能再跟 hex 字符，否则会误吃掉 {@code &#FF0000} 的前三位 */
     private static final Pattern AMP_HEX_3 = Pattern.compile("[&§]#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])(?![0-9a-fA-F])");
 
+    /** 渐变标记本身：{@code {#A>}} / {@code {#B<}} / {@code {#B<>}} —— 没有渐变权限时只摘这两个标记，文字留下 */
+    private static final Pattern GRADIENT_MARKER = Pattern.compile("\\{#[^\\{\\}]*?[<>][>]?\\}");
+
     /** strip 模式要摘掉的全部标记，按最长优先排列 */
     private static final Pattern STRIP = Pattern.compile(
             "[&§]x(?:[&§][0-9a-fA-F]){6}"                    // &x&F&F&0&0&0&0
@@ -97,12 +100,27 @@ public final class ChatColors {
         return s;
     }
 
-    /** 按模式把聊天内容变成组件：parse 解析颜色，strip / keep 都当纯文本。 */
+    /** 允许渐变的版本（老调用点 / 测试用）。 */
     public static Component component(final String mode, final String raw, final Map<String, String> namedColors) {
+        return component(mode, raw, namedColors, true);
+    }
+
+    /**
+     * 按模式把聊天内容变成组件：parse 解析颜色，strip / keep 都当纯文本。
+     *
+     * @param gradientAllowed 是否允许渲染渐变（{@code {#A>}文字{#B<}}）。false 时只摘掉渐变标记，
+     *                        文字和其它颜色码照旧解析 —— 没权限的人不会看到标记，也拿不到渐变。
+     */
+    public static Component component(final String mode, final String raw, final Map<String, String> namedColors,
+                                      final boolean gradientAllowed) {
         if (!"parse".equals(mode)) {
             return Component.text(raw == null ? "" : raw);
         }
         final String text = raw == null ? "" : raw;
+        if (!gradientAllowed) {
+            return Listeners.SERIALIZER.deserialize(
+                    normalize(GRADIENT_MARKER.matcher(text).replaceAll(""), namedColors));
+        }
         final List<Gradient> gradients = new ArrayList<>();
         // 渐变没法用一串 & 码表达，先把它们抠出来留个哨兵，其余部分照旧走 legacy 解析，
         // 解析完再把哨兵换成逐字染好色的组件。

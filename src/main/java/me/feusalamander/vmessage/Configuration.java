@@ -18,8 +18,6 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 public final class Configuration {
-    // ⚠️ 全部 volatile：reload 可能在别的线程（命令、自动热重载的定时任务）里改这些值，
-    //    而聊天事件在读它们。没有可见性保证的话，改完要等很久才生效，甚至永远不生效。
     private volatile String messageFormat;
     private volatile String joinFormat;
     private volatile String leaveFormat;
@@ -67,6 +65,11 @@ public final class Configuration {
     }
 
     private volatile String messageColors;
+    /**
+     * 使用渐变需要的 LuckPerms 权限名；留空 = 不限制。
+     * 没有这个权限的人，渐变标记会被摘掉、文字留下（其它颜色码照常）。
+     */
+    private volatile String gradientPermission = "vmessage.gradient";
     private volatile Map<String, String> namedColors = Collections.emptyMap();
     /** 聊天内容里的网址做成可点击短文本（[链接]，点一下打开浏览器）。 */
     private volatile boolean linkEnabled;
@@ -148,6 +151,9 @@ public final class Configuration {
         // 玩家聊天内容里的颜色码怎么处理：strip=剥掉 / parse=解析 / keep=原样显示
         final String mode = config.getString("Message.message-colors", "strip");
         messageColors = normalizeColorMode(mode);
+        // 留空 = 任何人都能用渐变
+        final String perm = config.getString("Message.gradient-permission", "vmessage.gradient");
+        gradientPermission = perm == null ? "" : perm.trim();
         namedColors = readNamedColors(config);
 
         // ---- 聊天里的网址 ----
@@ -372,6 +378,10 @@ public final class Configuration {
     /** 聊天内容里颜色码的处理方式：strip / parse / keep。 */
     public String getMessageColors() {
         return this.messageColors;
+    }
+    /** 渐变权限名；空串 = 不限制。 */
+    public String getGradientPermission() {
+        return this.gradientPermission == null ? "" : this.gradientPermission;
     }
     /** CMI 风格命名色 {#名字} → hex（不含 #），小写键。 */
     public Map<String, String> getNamedColors() {
