@@ -54,16 +54,12 @@ public class VMessage {
 
     @Subscribe
     private void onProxyInitialization(ProxyInitializeEvent event) {
-        configuration = Configuration.load(dataDirectory);
-        if (configuration == null) {
-            return;
-        }
-        createPapi();
-        metricsFactory.make(this, 16527);
-        listeners = new Listeners(proxy, configuration);
-        proxy.getEventManager().register(this, listeners);
+        // 命令先注册：万一配置文件读不出来，至少 /vmessage reload 还在，能自救
         CommandManager commandManager = proxy.getCommandManager();
-        CommandMeta commandMeta = commandManager.metaBuilder("Vmessage")
+        // ⚠️ 主名必须是小写：Velocity 底层走 Brigadier，literal 节点大小写敏感，
+        //    注册成 "Vmessage" 时敲 /vmessage 会「命令不存在」。大写作为别名保留，两种敲法都能用。
+        CommandMeta commandMeta = commandManager.metaBuilder("vmessage")
+                .aliases("Vmessage")
                 .plugin(this)
                 .build();
         SimpleCommand command = new ReloadCommand(this);
@@ -73,6 +69,14 @@ public class VMessage {
                 .build();
         SimpleCommand sendcommand = new SendCommand(this);
         commandManager.register(sendmeta, sendcommand);
+        configuration = Configuration.load(dataDirectory);
+        if (configuration == null) {
+            return;
+        }
+        createPapi();
+        metricsFactory.make(this, 16527);
+        listeners = new Listeners(proxy, configuration);
+        proxy.getEventManager().register(this, listeners);
         logger.info("Vmessage by FeuSalamander is working !");
         reportConfig();
         // 自动热重载：改了 config.toml 不用敲命令（默认关，config.toml 里 auto-reload = true 打开）
