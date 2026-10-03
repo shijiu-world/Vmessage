@@ -77,6 +77,8 @@ public class VMessage {
         SimpleCommand sendcommand = new SendCommand(this);
         commandManager.register(sendmeta, sendcommand);
         logger.info("Vmessage by FeuSalamander is working !");
+        logger.info("[vmessage] 聊天内容颜色码处理：" + configuration.getMessageColors()
+                + "（strip=剥掉 / parse=解析 / keep=原样；有 vmessage.color 权限的玩家一律解析）");
     }
     public static boolean isDiscord(){
         return discord;

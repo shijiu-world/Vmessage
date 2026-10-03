@@ -47,6 +47,18 @@ papi-retry-times = 0
 # 变量取不到时（子服没装对应插件、或没装桥接），%xxx% 会被抹成空串；
 # 如果它是被方括号包着的，例如 [&6%legendaryguild_guild%&r]，连括号一起删掉，不会留下空的 []。
 
+# ---- 玩家聊天内容里的颜色码（&4 这种）怎么处理 ----
+# 跨服消息是代理直接组装的，不经过子服 CMI，所以 CMI 那个
+# 「没 cmi.colors.publicmessage.* 权限就清掉颜色码」的规则对它无效。这里补上：
+#   strip = 剥掉颜色码（默认，跟 CMI 的 CleanUp 一致，不会显示 &4 这种字面量）
+#   parse = 解析颜色码，任何人在跨服聊天里都能上色（等于取消子服的颜色权限限制）
+#   keep  = 原样保留，&4 会当成普通字符显示出来（一般别用）
+message-colors = "strip"
+# 有 vmessage.color 权限的玩家，无论上面配什么都一律解析颜色码。
+# ⚠️ 这个权限要配在【代理端】的 LuckPerms 上；代理端 LP 若是独立 H2，子服给的权限读不到。
+#   想要「跟 CMI 一样的颜色权限控制」，可以等 LuckPerms 统一成同一个 MySQL 后，
+#   把 vmessage.color 给到和 cmi.colors.publicmessage.* 相同的那些组。
+
 [Join]
 format = "&7#prefix#&f#player# &e加入了 &a#server#"
 commands = []

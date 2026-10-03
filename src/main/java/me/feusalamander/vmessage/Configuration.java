@@ -28,6 +28,7 @@ public final class Configuration {
     private long papiCacheMillis;
     private long papiTimeoutMillis;
     private int papiRetryTimes;
+    private String messageColors;
     private Toml config;
     private static File file;
     private List<String> messagecmd;
@@ -67,8 +68,29 @@ public final class Configuration {
         papiTimeoutMillis = config.getLong("Message.papi-timeout-millis", 1500L);
         papiRetryTimes = config.getLong("Message.papi-retry-times", 0L).intValue();
 
+        // 玩家聊天内容里的颜色码怎么处理：strip=剥掉 / parse=解析 / keep=原样显示
+        final String mode = config.getString("Message.message-colors", "strip");
+        messageColors = normalizeColorMode(mode);
+
         customMeta = readCustomMeta(config);
         this.config = config;
+    }
+
+    /**
+     * 聊天内容里颜色码的处理方式。只认 strip / parse / keep，写错一律退回 strip。
+     */
+    private static String normalizeColorMode(final String mode) {
+        if (mode == null) {
+            return "strip";
+        }
+        final String m = mode.trim();
+        if (m.equalsIgnoreCase("parse")) {
+            return "parse";
+        }
+        if (m.equalsIgnoreCase("keep")) {
+            return "keep";
+        }
+        return "strip";
     }
 
     /**
@@ -202,6 +224,10 @@ public final class Configuration {
     /** 解析失败时的重试次数。默认 0：失败不进缓存，多重试一次就多等一轮超时。 */
     public int getPapiRetryTimes() {
         return this.papiRetryTimes;
+    }
+    /** 聊天内容里颜色码的处理方式：strip / parse / keep。 */
+    public String getMessageColors() {
+        return this.messageColors;
     }
 	
     void reload(){
