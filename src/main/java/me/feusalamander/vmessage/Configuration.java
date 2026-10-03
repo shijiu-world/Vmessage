@@ -15,6 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 public final class Configuration {
     // ⚠️ 全部 volatile：reload 可能在别的线程（命令、自动热重载的定时任务）里改这些值，
@@ -67,6 +68,14 @@ public final class Configuration {
 
     private volatile String messageColors;
     private volatile Map<String, String> namedColors = Collections.emptyMap();
+    /** 聊天内容里的网址做成可点击短文本（[链接]，点一下打开浏览器）。 */
+    private volatile boolean linkEnabled;
+    /** 链接显示的文字（支持 & 颜色码）。 */
+    private volatile String linkText;
+    /** 悬停提示，{url} 换成完整网址；留空则不显示提示。 */
+    private volatile String linkHover;
+    /** 识别网址的正则；写错就用默认的那条。 */
+    private volatile Pattern linkPattern;
     private Toml config;
     private static File file;
     private volatile List<String> messagecmd;
@@ -141,6 +150,12 @@ public final class Configuration {
         messageColors = normalizeColorMode(mode);
         namedColors = readNamedColors(config);
 
+        // ---- 聊天里的网址 ----
+        linkEnabled = config.getBoolean("Link.enabled", true);
+        linkText = config.getString("Link.text", "&9[链接]");
+        linkHover = config.getString("Link.hover", "&7点击打开：&f{url}");
+        linkPattern = compilePattern(config.getString("Link.pattern", Linkify.DEFAULT_PATTERN_SOURCE));
+
         customMeta = readCustomMeta(config);
 
         // ---- 给「没有 PAPI 桥接」的子服用的备用格式 ----
@@ -184,6 +199,18 @@ public final class Configuration {
             }
         }
         return set;
+    }
+
+    /** 正则写错了就用默认的，别让一条配置把整个聊天搞挂。 */
+    private static Pattern compilePattern(final String regex) {
+        if (regex == null || regex.trim().isEmpty()) {
+            return Linkify.defaultPattern();
+        }
+        try {
+            return Pattern.compile(regex);
+        } catch (final Exception e) {
+            return Linkify.defaultPattern();
+        }
     }
 
     private static String trimToNull(final String s) {
@@ -349,6 +376,20 @@ public final class Configuration {
     /** CMI 风格命名色 {#名字} → hex（不含 #），小写键。 */
     public Map<String, String> getNamedColors() {
         return this.namedColors;
+    }
+    /** 聊天里的网址要不要做成可点击短文本。 */
+    public boolean isLinkEnabled() {
+        return this.linkEnabled;
+    }
+    public String getLinkText() {
+        return this.linkText;
+    }
+    public String getLinkHover() {
+        return this.linkHover;
+    }
+    /** 识别网址用的正则；永远不为 null（写错时退回默认）。 */
+    public Pattern getLinkPattern() {
+        return this.linkPattern == null ? Linkify.defaultPattern() : this.linkPattern;
     }
 
     /**

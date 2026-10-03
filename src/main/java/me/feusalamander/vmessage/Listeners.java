@@ -468,14 +468,19 @@ public final class Listeners {
     private Component build(final String message, final String content, final boolean mini,
                             final boolean permission, final String colorMode,
                             final Map<String, String> namedColors) {
-        if (mini && permission) {
-            // 开了 MiniMessage 且玩家有权限：消息内容直接参与解析（可以用 <red> 这类语法）
-            return mm.deserialize(message.replace("#message#", content).replace("§", ""));
-        }
+        // 消息内容先做成组件：开了 MiniMessage 且玩家有权限时按 MiniMessage 解析（可以用 <red> 这类语法），
+        // 否则按 colorMode 处理（parse 才解析 & 颜色码）。
+        // ⚠️ 不能像上游那样把 content 直接拼进格式串再一起反序列化 ——
+        //    玩家说的话里带 < > 就会破坏格式串的结构，而且网址也会跟着被解析。
+        Component body = mini && permission
+                ? mm.deserialize(content.replace("§", ""))
+                : messageComponent(colorMode, content, namedColors);
+        // 网址做成 [链接]（可点击、悬停看完整网址）
+        body = Linkify.apply(body, configuration);
         final Component parsed = mini ? mm.deserialize(message.replace("§", "")) : SERIALIZER.deserialize(message);
         return parsed.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder()
                 .matchLiteral("#message#")
-                .replacement(messageComponent(colorMode, content, namedColors))
+                .replacement(body)
                 .build());
     }
 

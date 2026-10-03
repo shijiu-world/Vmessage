@@ -105,6 +105,10 @@ public class VMessage {
             logger.info("[vmessage] 这些服收不到 PAPI 变量（走 no-papi-format）："
                     + String.join(", ", configuration.getNoPapiServers()));
         }
+        logger.info("[vmessage] 聊天里的网址："
+                + (configuration.isLinkEnabled()
+                    ? "显示为 " + configuration.getLinkText() + "（可点击，悬停看完整网址）"
+                    : "不处理"));
     }
 
     /** 定时比对 config.toml 的修改时间，变了就自动重载。 */
