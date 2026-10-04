@@ -4,7 +4,7 @@
  "version": "${project.version}",
  "description": "Vmessage 1.6.2 patched: (1) Component.replaceText(String,ComponentLike) -> TextReplacementConfig (Velocity 4.x / adventure compat); (2) [Custom-Meta] supports unlimited placeholder -> LuckPerms meta key entries instead of only custom1/custom2; (3) any #xxx# in the format is resolved as a LuckPerms meta key directly; (4) optional PAPIProxyBridge support: %placeholder% in the format is resolved by the player's backend server",
  "authors": [
-  "FeuSalamander"
+  "拾玖世界"
  ],
  "dependencies": [
   {

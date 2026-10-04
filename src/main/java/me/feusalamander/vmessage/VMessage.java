@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
         name = "Vmessage",
         version = "1.6.1",
         description = "A velocity plugin that creates a multi server chat for the network",
-        authors = {"FeuSalamander"},
+        authors = {"拾玖世界"},
         dependencies = {
                 @Dependency(id = "luckperms", optional = true),
                 @Dependency(id = "discord",optional = true),
@@ -83,7 +83,7 @@ public class VMessage {
         proxy.getEventManager().register(this, suppression);
         listeners = new Listeners(this, proxy, configuration, suppression);
         proxy.getEventManager().register(this, listeners);
-        logger.info("Vmessage by FeuSalamander is working !");
+        logger.info("Vmessage by 拾玖世界 is working !");
         reportConfig();
         // 自动热重载：改了 config.toml 不用敲命令（默认关，config.toml 里 auto-reload = true 打开）
         startAutoReload();

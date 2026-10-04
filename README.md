@@ -39,7 +39,7 @@
 | `PAPIProxyBridge-Bukkit-*.jar` | `plugins/` | 可选，同上 |
 | `VmessageSuppress-1.0.0.jar` | `plugins/` | 可选，见[被子服取消的聊天](#9-被子服取消的聊天不再跨服泄露) |
 
-启动后代理日志会打一句 `Vmessage by FeuSalamander is working !`，随后逐条报告当前生效的配置
+启动后代理日志会打一句 `Vmessage by 拾玖世界 is working !`，随后逐条报告当前生效的配置
 （哪些服参与、等不等抑制信号、网址怎么处理等）——配置错了在日志里一眼能看出来。
 
 ---
@@ -311,7 +311,8 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 
 ### 9. 被子服取消的聊天不再跨服泄露
 
-见上文。需配套插件 `VmessageSuppress`（`D:\Code\mc\plugins\VmessageSuppress`）。
+见上文。需配套插件 [VmessageSuppress](https://github.com/shijiu-world/VmessageSuppress)（源码也在本地
+`D:\Code\mc\plugins\VmessageSuppress`）。
 
 ### 10. 指定哪些子服参与（黑名单 / 白名单）
 
@@ -357,7 +358,8 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 - 记**原文**而不是事件里的 message——万一中间插件改写过，代理端拿原始输入比对才对得上号。
 - 只有被取消时才发包，正常聊天零开销。
 
-源码在 `D:\Code\mc\plugins\VmessageSuppress`，编译：
+仓库：<https://github.com/shijiu-world/VmessageSuppress>（本地 `D:\Code\mc\plugins\VmessageSuppress`）。
+编译（仓库里有 `build.sh`，会自动找 paper-api）：
 
 ```bash
 javac -encoding UTF-8 --release 17 -cp <服务端 API jar> -d out src/main/java/cn/shijiu/vmessagesuppress/VmessageSuppress.java
