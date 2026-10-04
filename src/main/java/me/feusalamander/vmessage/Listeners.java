@@ -42,6 +42,20 @@ public final class Listeners {
     private static final Set<String> BUILTIN = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "player", "prefix", "suffix", "message", "server", "oldserver")));
     private static final Pattern PLACEHOLDER = Pattern.compile("#([A-Za-z0-9_\\-]+)#");
+    /**
+     * 给 Discord 剥颜色码用（&c / &#RRGGBB / &#RGB / &x&F&F&0&0&0&0 / §c 都算）。
+     *
+     * ⚠️ 单字符那一档后面加了 `(?!=)`：网址里 `?a=1&b=2` 的 `&b` 正好是合法颜色码字符，
+     *    不加这个断言会把 `&b=2` 整段吃掉，链接直接坏了。真正的颜色码后面紧跟 `=` 的情况几乎不存在。
+     */
+    private static final Pattern DISCORD_COLOR = Pattern.compile(
+            "[&§](?:#[0-9a-fA-F]{6}"
+                    + "|#[0-9a-fA-F]{3}(?![0-9a-fA-F])"
+                    + "|x(?:[&§][0-9a-fA-F]){6}"
+                    + "|[0-9a-fA-Fk-oK-OrR](?!=))");
+    /** 组件解析失败只报一次，别每条消息都刷屏。 */
+    private static final java.util.concurrent.atomic.AtomicBoolean warnedParse =
+            new java.util.concurrent.atomic.AtomicBoolean(true);
     /** 有这个权限的玩家，聊天内容里的颜色码会被解析（无视 message-colors 配置） */
     private static final String COLOR_PERMISSION = "vmessage.color";
 
@@ -349,22 +363,22 @@ public final class Listeners {
     /**
      * Discord 要的是纯文本，颜色码得剥掉。
      *
-     * ⚠️ 上游这里有一句 `proxyServer.sendMessage(Component.text(Arrays.toString(dump2)))` ——
+     * ⚠️ 上游原本的写法是 `split("§")` 之后对每段 `substring(1)` —— 那只在字符串【以颜色码开头】
+     *    时才对得上；开头是普通文字时会把第一个字当成颜色码吃掉（"史蒂夫离开了" → "蒂夫离开了"）。
+     *    前缀为空、占位符被折叠掉之后格式就未必以 & 开头了，这个坑很容易踩到。
+     *    改成直接删颜色码，一字不动地保留正文。
+     *
+     * ⚠️ 另外上游这里还有一句 `proxyServer.sendMessage(Component.text(Arrays.toString(dump2)))` ——
      *    那是调试残留，装了 VelocityDiscord 时每次进/出/切服都会向【全服】广播一句
      *    `[&e, xxx离开了...]` 这样的数组文本。已删。
      */
     private static String discordRaw(final String message) {
-        if (!VMessage.isDiscord()) {
-            return message;
-        }
-        final String[] parts = message.replace("&", "§").split("§");
-        final StringBuilder dump = new StringBuilder();
-        for (final String part : parts) {
-            if (part.length() > 1) {
-                dump.append(part, 1, part.length());
-            }
-        }
-        return dump.toString();
+        return VMessage.isDiscord() ? stripColors(message) : message;
+    }
+
+    /** 删掉颜色码（&c / &#RRGGBB / §c），正文一字不动。包内可见，便于单测。 */
+    static String stripColors(final String message) {
+        return DISCORD_COLOR.matcher(message).replaceAll("");
     }
 
     private String luckperms(String message, final Player p) {
@@ -506,13 +520,9 @@ public final class Listeners {
                 : build(altFormat, content, mini, permission, colorMode, namedColors, gradient);
         if (VMessage.isDiscord()) {
             final String source = mainFormat.isEmpty() ? altFormat : mainFormat;
-            String dump = "";
-            String[] dump2 = source.replace("&", "§").split("§");
-            for(String string : dump2){
-                if(string.length() >1)
-                    dump = dump+string.substring(1);
-            }
-            VelocityDiscord.getDiscord().sendMessage(dump);
+            // ⚠️ #message# 在这一步才换成玩家真正说的话 —— 上面那两个组件里是换好了的，
+            //    但 Discord 要的是纯文本，只能在这里自己换一次（以前漏了这步，Discord 上全是 "#message#"）。
+            VelocityDiscord.getDiscord().sendMessage(discordRaw(source.replace("#message#", content)));
         }
         final com.velocitypowered.api.proxy.server.ServerInfo sender =
                 p.getCurrentServer().map(ServerConnection::getServerInfo).orElse(null);
@@ -548,15 +558,36 @@ public final class Listeners {
         // ⚠️ 不能像上游那样把 content 直接拼进格式串再一起反序列化 ——
         //    玩家说的话里带 < > 就会破坏格式串的结构，而且网址也会跟着被解析。
         Component body = mini && permission
-                ? mm.deserialize(content.replace("§", ""))
+                ? parseQuietly(content.replace("§", ""), true)
                 : messageComponent(colorMode, content, namedColors, gradient);
         // 网址做成 [链接]（可点击、悬停看完整网址）
         body = Linkify.apply(body, configuration);
-        final Component parsed = mini ? mm.deserialize(message.replace("§", "")) : SERIALIZER.deserialize(message);
+        final Component parsed = parseQuietly(message.replace("§", ""), mini);
         return parsed.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder()
                 .matchLiteral("#message#")
                 .replacement(body)
                 .build());
+    }
+
+    /**
+     * 解析一条格式串；解析失败时**退化成纯文本**而不是把异常抛出去。
+     *
+     * 为什么要兜底：抛出去的话整条消息就没了 —— 别的子服一条都收不到，比"显示得难看"严重得多。
+     * 触发场景很实在：MiniMessage 模式下玩家内容里有畸形标签、LuckPerms 前缀里带奇怪字符等。
+     *
+     * @param text  待解析的串
+     * @param mini  true = 按 MiniMessage 解析，false = 按 & 颜色码解析
+     */
+    private static Component parseQuietly(final String text, final boolean mini) {
+        try {
+            return mini ? mm.deserialize(text) : SERIALIZER.deserialize(text);
+        } catch (final RuntimeException ex) {
+            if (warnedParse.compareAndSet(true, false)) {
+                org.slf4j.LoggerFactory.getLogger("vmessage").warn(
+                        "[vmessage] 有一条消息解析失败，已按纯文本发出（之后不再重复提示）：" + ex);
+            }
+            return Component.text(text);
+        }
     }
 
     /** 按 colorMode 决定消息内容怎么变成组件：parse 解析颜色码（含 CMI 的 {#RRGGBB} 那套），strip / keep 都按纯文本处理。 */
