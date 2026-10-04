@@ -1,0 +1,53 @@
+name: 发布 Release
+
+# 打 tag 就构建并把 jar 挂到 Release 上：
+#   git tag v1.6.2-velocity4fix-2 && git push origin v1.6.2-velocity4fix-2
+# 手动触发（Actions 页面 Run workflow）只构建、不发 Release。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # pom 里是 source/target 17；JDK 21 既能编它，也读得了 Velocity 4.x 的 class
+      - name: 准备 JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: 构建
+        run: mvn -B clean package
+
+      - name: 收集产物
+        run: |
+          mkdir -p dist
+          # 排除 original-*.jar（没有 shade 插件时一般没有，留个保险）
+          find target -maxdepth 1 -name '*.jar' -not -name 'original-*.jar' -exec cp {} dist/ \;
+          ls -l dist
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vmessage
+          path: dist/*.jar
+
+      - name: 发布到 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: dist/*.jar
+          generate_release_notes: true
