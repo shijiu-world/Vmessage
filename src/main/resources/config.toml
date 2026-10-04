@@ -142,12 +142,6 @@ format = "&c#player# 被踢出 #oldserver#"
 commands = []
 enabled = true
 
-# 人还没进任何服就被断开时广播一条 —— 对齐线上 velocity-chat 的 [disconnect]
-# 触发场景：客户端版本不符、被封禁、顶号、登录阶段超时/报错、连进来还没落到子服就掉了。
-# ⚠️ 这是发给【全体在线玩家】的。若有人扫服/被封的号反复重连，全服会跟着刷屏 ——
-#    真出现这种情况就把 enabled 改成 false（线上 velocity-chat 这项是 true，迁移时行为一致）。
-# ⚠️ 这条只有 #player#（人没进服，没有服务器名），#server# / #oldserver# 会被当成空段收掉。
-#    被 /kick 踢出去的不走这里，走上面的 [Kick]。
 [Disconnect]
 format = "&e#player# 断开了连接"
 commands = []
