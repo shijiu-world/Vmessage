@@ -6,7 +6,7 @@
 
     <groupId>Vmessage</groupId>
     <artifactId>Vmessage</artifactId>
-    <version>1.6.2-velocity4fix-multimeta</version>
+    <version>1.7.0</version>
     <packaging>jar</packaging>
 
     <name>Vmessage</name>

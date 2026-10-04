@@ -1,7 +1,7 @@
 name: 发布 Release
 
 # 打 tag 就构建并把 jar 挂到 Release 上：
-#   git tag v1.6.2-velocity4fix-2 && git push origin v1.6.2-velocity4fix-2
+#   git tag v1.7.0 && git push origin v1.7.0
 # 手动触发（Actions 页面 Run workflow）只构建、不发 Release。
 on:
   push:
