@@ -84,6 +84,14 @@ public final class Configuration {
     /** 最多等多少毫秒；期间没收到信号就当正常聊天照常转发（上限 1000）。 */
     private volatile long awaitCancelTimeoutMillis;
     /**
+     * 等信号的范围（与 server-filter 同一套黑/白名单写法）。
+     * false = 黑名单：名单里的服【不】等（收到就转发），其余都等 —— 名单为空就是「全都等」（默认，与没这个功能时一样）
+     * true  = 白名单：只有名单里的服等 —— 名单为空就是「谁都不等」，等于把抑制关掉
+     */
+    private volatile boolean suppressAwaitWhitelist;
+    /** await-cancel-servers 里写的服务器名，存小写；用 velocity.toml 里注册的名字。 */
+    private volatile Set<String> suppressAwaitServers = new LinkedHashSet<>();
+    /**
      * 参与跨服聊天的子服范围（server-filter 的两种读法）。
      * false = 黑名单：名单里的服不参与，其余都参与 —— 名单为空就是「全部参与」（默认，与没这个功能时一样）
      * true  = 白名单：只有名单里的服参与 —— 名单为空就是「谁都不参与」，等于把跨服聊天关掉
@@ -185,6 +193,13 @@ public final class Configuration {
         // 上限 1 秒：再久别的服看到消息就会有明显延迟，也说明子服那边不正常
         awaitCancelTimeoutMillis = Math.min(1000L, Math.max(0L,
                 config.getLong("Message.await-cancel-timeout-millis", 100L)));
+
+        // ---- 哪些服要等这个信号 ----
+        // 只认 blacklist / whitelist 两个词；写错、留空都当黑名单（默认全都等，不会静默关掉抑制）
+        final String awaitMode = config.getString("Message.await-cancel-server-mode", "blacklist");
+        suppressAwaitWhitelist = awaitMode != null && awaitMode.trim().equalsIgnoreCase("whitelist");
+        // 整个集合替换，不在原集合上 clear+addAll —— 免得别的线程读到「清空了但还没填」的中间态
+        suppressAwaitServers = readServerList(config, "Message.await-cancel-servers");
 
         // ---- 参与跨服聊天的子服范围 ----
         // 只认 blacklist / whitelist 两个词；写错、留空都当黑名单（默认全参与，不会静默断流）
@@ -446,6 +461,38 @@ public final class Configuration {
     /** 最多等多少毫秒；期间没收到信号就当正常聊天照常转发。 */
     public long getAwaitCancelTimeoutMillis() {
         return this.awaitCancelTimeoutMillis;
+    }
+
+    /**
+     * 这个服的聊天要不要先等一小会儿，看子服会不会把它取消掉。
+     *
+     * <p>不等的服：收到就立刻转发，零延迟；代价是商店输入「64」这类被子服取消掉的聊天
+     * 也会漏到别的服。所以只给「确定没装 VmessageSuppress / 确定没有会取消聊天的插件」的服开。
+     *
+     * @param serverName velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名），大小写不敏感
+     * @return true = 等 {@link #getAwaitCancelTimeoutMillis()} 毫秒再转发
+     */
+    public boolean isAwaitCancelServer(final String serverName) {
+        // 总开关关了、或没给等待时间：对任何服都不等
+        if (!awaitCancelSignal || awaitCancelTimeoutMillis <= 0L) {
+            return false;
+        }
+        // ⚠️ 名字取不到时按「等」处理：等一下只是消息晚一点到，不会丢；反过来则会漏掉抑制
+        if (serverName == null) {
+            return true;
+        }
+        final boolean listed = suppressAwaitServers.contains(serverName.toLowerCase(Locale.ROOT));
+        return suppressAwaitWhitelist == listed;
+    }
+
+    /** await-cancel 名单是不是白名单模式（true = 只有名单里的服才等）。 */
+    public boolean isSuppressAwaitWhitelist() {
+        return this.suppressAwaitWhitelist;
+    }
+
+    /** 当前生效的 await-cancel 名单（小写），只在日志里用。 */
+    public Set<String> getSuppressAwaitServers() {
+        return Collections.unmodifiableSet(suppressAwaitServers);
     }
     /**
      * 这个服参不参与跨服聊天 —— 不参与的服既不往外发，也不收别服的消息。

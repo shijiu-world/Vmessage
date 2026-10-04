@@ -47,8 +47,9 @@ PlayerChatEvent (Listeners.onMessage)
   ↓    不在 → 直接 return：不转发、不跑 commands、不进 Discord
   ↓    ⚠️ 但不能 deny 原始聊天（all=true 时代理靠自己重发，deny 了又不代发 = 吞掉聊天）
   ↓ ② all=true → e.setResult(denied())
-  ↓ ③ await-cancel-signal 开着 → 挂一个延迟任务（默认 100ms）再往下走
-  ↓    延迟到期时问 Suppression：这条被取消了？是 → 整条丢弃
+  ↓ ③ 这个服要不要等信号（await-cancel-signal 开着 + 该服在 await-cancel-servers 判定内）
+  ↓    等 → 挂一个延迟任务（默认 100ms），到期问 Suppression：这条被取消了？是 → 整条丢弃
+  ↓    不等（没装 VmessageSuppress 的服）→ 跳过延迟，立即往下走
   ↓ ④ 拼格式：#player#/#prefix#/#suffix#/#server# 内建位 → #xxx# 当 LuckPerms meta 键查
   ↓            → %xxx% 走 PapiBridge 向「发送者所在子服」现算
   ↓ ⑤ ChatColors 按 message-colors（strip/parse/keep）+ vmessage.color 权限处理消息内容
@@ -112,7 +113,7 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
 
 | 项目 | 关系 |
 |---|---|
-| [VmessageSuppress](https://github.com/shijiu-world/VmessageSuppress)（本地 `D:\Code\mc\plugins\VmessageSuppress`） | 子服配套。**每个子服都要装**，否则「被子服取消的聊天」退化为等超时后照常转发。通道 `vmessage:suppress`，LOWEST 记原文 + MONITOR 判 `isCancelled()`。编译用它的 `build.sh`（不用 Maven，单类 + Bukkit API） |
+| [VmessageSuppress](https://github.com/shijiu-world/VmessageSuppress)（本地 `D:\Code\mc\plugins\VmessageSuppress`） | 子服配套。**每个子服都要装**，否则「被子服取消的聊天」退化为等超时后照常转发（这类服可以写进 `await-cancel-servers` 黑名单，让它不再白等）。通道 `vmessage:suppress`，LOWEST 记原文 + MONITOR 判 `isCancelled()`。编译用它的 `build.sh`（不用 Maven，单类 + Bukkit API） |
 | `PAPIProxyBridge` 1.8.4 | 可选。Velocity 端 + Bukkit 端。**killer 服没装 PAPI → 加进代理端 `settings.yml` 黑名单**。Bukkit 原版 jar 因 `lettuce-core` 加载失败，**必须用 noredis 版** |
 | `VWhisper` | 兄弟项目，管私聊。两者不冲突，但 `ChatColors` 是各自一份拷贝 |
 | `VTpa` | 兄弟项目，管传送请求 |
@@ -131,6 +132,6 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
 |---|---|
 | 一说话就崩 | 是不是用了原版 jar？必须自编译修补版。原版在 Velocity 4.x 上 `NoSuchMethodError` |
 | `%xxx%` 显示为空 | 目标服没装 PPB-Bukkit；或没加进 `no-papi-servers`（每次发言白等一次超时） |
-| 玩家输入「64」被别的服看到 | 那个子服没装 `VmessageSuppress` |
+| 玩家输入「64」被别的服看到 | 那个子服没装 `VmessageSuppress`；或它被写进了 `await-cancel-servers` 黑名单（黑名单 = 不等） |
 | 被踢的人播两条 | `KickTracker` 失效了，查标记是不是没取用/没兜底 |
 | 消息里网址坏了 | 剥色正则的 `(?!=)` 断言被改掉了 |

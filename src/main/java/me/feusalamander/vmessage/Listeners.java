@@ -106,7 +106,10 @@ public final class Listeners {
         if(configuration.isAllEnabled()){
             e.setResult(PlayerChatEvent.ChatResult.denied());
         }
-        if (!configuration.isAwaitCancelSignal() || suppression == null) {
+        // 这个服不排队等信号 —— 要么没装 VmessageSuppress（名单里排除了），要么功能关了。
+        // 直接转发，别的服看到消息零延迟；代价是被子服取消的聊天（商店输入等）会漏过去。
+        if (suppression == null
+                || !configuration.isAwaitCancelServer(current.get().getServerInfo().getName())) {
             message(p, m);
             return;
         }

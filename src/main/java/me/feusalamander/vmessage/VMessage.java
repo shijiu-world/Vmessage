@@ -126,10 +126,37 @@ public class VMessage {
                       + "（扫服或反复重连会刷屏，嫌吵就关掉 Disconnect.enabled）"
                     : "不广播"));
         logger.info("[vmessage] 被 /kick 踢出去：只播 [Kick] 一条，不再补 [Leave]");
-        logger.info("[vmessage] 被子服取消的聊天：" + (configuration.isAwaitCancelSignal()
-                ? "等 " + configuration.getAwaitCancelTimeoutMillis() + " 毫秒，收到抑制信号就不转发"
-                  + "（各子服需装 VmessageSuppress，没装则每次等到超时）"
-                : "不处理（照常转发）"));
+        reportAwaitCancel();
+    }
+
+    /**
+     * 打印「哪些服要等子服的取消信号」。
+     * 白名单配成空列表等于全服关掉抑制（商店输入会漏到别的服），所以单独用 WARN 喊一声。
+     */
+    private void reportAwaitCancel() {
+        if (!configuration.isAwaitCancelSignal()) {
+            logger.info("[vmessage] 被子服取消的聊天：不处理（照常转发）");
+            return;
+        }
+        final long timeout = configuration.getAwaitCancelTimeoutMillis();
+        if (timeout <= 0L) {
+            logger.info("[vmessage] 被子服取消的聊天：await-cancel-timeout-millis = 0，不等，收到就转发");
+            return;
+        }
+        final String head = "[vmessage] 被子服取消的聊天：等 " + timeout + " 毫秒，收到抑制信号就不转发";
+        final String list = String.join(", ", configuration.getSuppressAwaitServers());
+        if (configuration.isSuppressAwaitWhitelist()) {
+            if (list.isEmpty()) {
+                logger.warn(head + "，但【白名单】是空的 —— 没有服会等信号（等于关掉抑制；"
+                        + "想恢复就把服名写进 await-cancel-servers，或把 await-cancel-server-mode 改回 blacklist）");
+            } else {
+                logger.info(head + "；只等这些服（白名单）：" + list + "；其余服收到就转发，零延迟");
+            }
+            return;
+        }
+        logger.info(head + (list.isEmpty()
+                ? "（所有服都等；没装 VmessageSuppress 的服可以加进 await-cancel-servers 免去等待）"
+                : "；这些服不等（黑名单，收到就转发）：" + list));
     }
 
     /**

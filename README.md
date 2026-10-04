@@ -82,6 +82,8 @@
 | `papi-retry-times` | `0` | 桥接内部重试次数，设 0 避免失败时白等好几轮超时 |
 | `await-cancel-signal` | `true` | 是否等子服的「这条聊天被取消了」信号，见下 |
 | `await-cancel-timeout-millis` | `100` | 最长等多久（毫秒），上限 1000，`0` = 不等待 |
+| `await-cancel-server-mode` | `"blacklist"` | 哪些子服要等这个信号，见下 |
+| `await-cancel-servers` | `[]` | 名单内容 |
 | `server-filter-mode` | `"blacklist"` | 哪些子服参与跨服聊天，见下 |
 | `server-filter` | `[]` | 名单内容 |
 
@@ -98,6 +100,38 @@
 - **失效模式是安全的**：子服没装配套插件，代理每次等到超时就照常转发，不会漏发，
   只是别的服看到消息晚一点。
 - **只影响别的子服看到消息的时间**。玩家自己所在服的聊天由子服自己广播，手感不变。
+
+#### 指定哪些子服要等这个信号
+
+没装 `VmessageSuppress` 的子服永远不会有信号，等它只是白等。
+用这一组配置把它们排除掉：排除掉的服**收到就转发，零延迟**（代价是商店输入这类被取消的
+聊天会漏到别的服，反正那些服本来也拦不住）。
+
+```toml
+await-cancel-server-mode = "blacklist"   # blacklist = 名单里的不等；whitelist = 只有名单里的等
+await-cancel-servers = []                # velocity.toml 里注册的服务器名，大小写都行
+```
+
+| 模式 | 名单为空 | 名单非空 |
+|---|---|---|
+| `blacklist`（默认） | **全都等**（与加这个功能之前一致） | 名单里的不等，其余都等 |
+| `whitelist` | **谁都不等**＝关掉抑制 | 只有名单里的等 |
+
+```toml
+# 例 1：只有生存服装了配套插件 → 白名单
+await-cancel-server-mode = "whitelist"
+await-cancel-servers = ["survival"]
+
+# 例 2：小游戏服和起床服没装 → 黑名单
+await-cancel-server-mode = "blacklist"
+await-cancel-servers = ["minigame", "bedwars"]
+```
+
+- 白名单配成空列表会打 WARN（等于全服关掉抑制）。
+- 模式只认 `blacklist`/`whitelist`，写错或留空退回黑名单；服务器名取不到时按「等」处理
+  （晚一点不会丢消息，反过来就会漏掉抑制）。
+- `await-cancel-signal = false` 或 `await-cancel-timeout-millis = 0` 时，任何服都不等
+  ——这两个总开关优先于名单。起服日志会逐条打出到底哪些服在等。
 
 #### 指定哪些子服参与
 
@@ -312,11 +346,12 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 ### 9. 被子服取消的聊天不再跨服泄露
 
 见上文。需配套插件 [VmessageSuppress](https://github.com/shijiu-world/VmessageSuppress)（源码也在本地
-`D:\Code\mc\plugins\VmessageSuppress`）。
+`D:\Code\mc\plugins\VmessageSuppress`）。没装的服可以用 `await-cancel-servers` 排除，不再白等。
 
 ### 10. 指定哪些子服参与（黑名单 / 白名单）
 
 见上文。默认黑名单 + 空名单 = 全部参与，装上后行为与加这个功能之前完全一致。
+同一套黑/白名单写法也用在 `await-cancel-servers`（哪些服要等抑制信号）。
 
 ### 11. 补上「还没进服就断开」的广播 `[Disconnect]`
 
