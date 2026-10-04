@@ -120,6 +120,12 @@ public class VMessage {
                     ? "显示为 " + configuration.getLinkText() + "（可点击，悬停看完整网址）"
                     : "不处理"));
         reportServerFilter();
+        logger.info("[vmessage] 没进服就断开（版本不符/封禁/顶号/登录超时）："
+                + (configuration.isDisconnectEnabled()
+                    ? "广播「" + configuration.getDisconnectFormat() + "」"
+                      + "（扫服或反复重连会刷屏，嫌吵就关掉 Disconnect.enabled）"
+                    : "不广播"));
+        logger.info("[vmessage] 被 /kick 踢出去：只播 [Kick] 一条，不再补 [Leave]");
         logger.info("[vmessage] 被子服取消的聊天：" + (configuration.isAwaitCancelSignal()
                 ? "等 " + configuration.getAwaitCancelTimeoutMillis() + " 毫秒，收到抑制信号就不转发"
                   + "（各子服需装 VmessageSuppress，没装则每次等到超时）"

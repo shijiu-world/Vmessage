@@ -22,11 +22,14 @@ public final class Configuration {
     private volatile String joinFormat;
     private volatile String leaveFormat;
     private volatile String kickFormat;
+    /** [Disconnect] 的格式：人还没进任何服就断开了（版本不符、封禁、顶号、登录阶段超时……）。 */
+    private volatile String disconnectFormat;
     private volatile String changeFormat;
     private volatile boolean messageEnabled;
     private volatile boolean joinEnabled;
     private volatile boolean leaveEnabled;
     private volatile boolean kickEnabled;
+    private volatile boolean disconnectEnabled;
     private volatile boolean changeEnabled;
     private volatile boolean minimessage;
     private volatile boolean all;
@@ -102,6 +105,7 @@ public final class Configuration {
     private volatile List<String> joincmd;
     private volatile List<String> leavecmd;
     private volatile List<String> kickcmd;
+    private volatile List<String> disconnectcmd;
     private volatile List<String> changecmd;
     // 改版：Custom-Meta 支持任意多个槽位，key = 占位符名(对应 #key#)，value = LuckPerms meta 键
     private volatile Map<String, String> customMeta;
@@ -142,12 +146,14 @@ public final class Configuration {
         joinFormat = config.getString("Join.format", "");
         leaveFormat = config.getString("Leave.format", "");
         kickFormat = config.getString("Kick.format", "");
+        disconnectFormat = config.getString("Disconnect.format", "");
         changeFormat = config.getString("Server-change.format", "");
 
         messageEnabled = config.getBoolean("Message.enabled", false);
         joinEnabled = config.getBoolean("Join.enabled", false);
         leaveEnabled = config.getBoolean("Leave.enabled", false);
         kickEnabled = config.getBoolean("Kick.enabled", false);
+        disconnectEnabled = config.getBoolean("Disconnect.enabled", true);
         changeEnabled = config.getBoolean("Server-change.enabled", false);
 
         aliases = config.getTable("Aliases");
@@ -156,6 +162,7 @@ public final class Configuration {
         joincmd = config.getList("Join.commands");
         leavecmd = config.getList("Leave.commands");
         kickcmd = config.getList("Kick.commands");
+        disconnectcmd = config.getList("Disconnect.commands");
         changecmd = config.getList("Server-change.commands");
         minimessage = config.getBoolean("Message-format.minimessage");
         all = config.getBoolean("Message.all", false);
@@ -342,6 +349,11 @@ public final class Configuration {
         return this.kickFormat;
     }
 
+    /** [Disconnect] 的格式：人还没进服就断开了。 */
+    public String getDisconnectFormat() {
+        return this.disconnectFormat;
+    }
+
     public String getChangeFormat() {
         return this.changeFormat;
     }
@@ -359,6 +371,11 @@ public final class Configuration {
     }
     public boolean isKickEnabled() {
         return this.kickEnabled;
+    }
+
+    /** 还没进服就断开时广播一条（对齐 velocity-chat 的 [disconnect]）。 */
+    public boolean isDisconnectEnabled() {
+        return this.disconnectEnabled;
     }
 
     public boolean isChangeEnabled() {
@@ -381,6 +398,9 @@ public final class Configuration {
     }
     public List<String> getKickcmd(){
         return this.kickcmd;
+    }
+    public List<String> getDisconnectcmd(){
+        return this.disconnectcmd;
     }
     public List<String> getChangecmd(){
         return this.changecmd;

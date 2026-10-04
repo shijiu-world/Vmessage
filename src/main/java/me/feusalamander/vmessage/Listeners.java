@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -60,6 +61,8 @@ public final class Listeners {
     private final VMessage plugin;
     /** 子服发来的「这条聊天被取消了」信号；null 表示没启用。 */
     private final Suppression suppression;
+    /** 记住刚被踢出去的玩家 —— 别让 [Kick] 之后再补一条 [Leave]。 */
+    private final KickTracker kickTracker = new KickTracker(10000L);
 
     Listeners(final VMessage plugin, final ProxyServer proxyServer,
               final Configuration configuration, final Suppression suppression) {
@@ -110,16 +113,24 @@ public final class Listeners {
     }
     @Subscribe
     private void onLeave(final DisconnectEvent e) {
-        if (!configuration.isLeaveEnabled()) {
-            return;
-        }
-        if (!e.getLoginStatus().equals(DisconnectEvent.LoginStatus.SUCCESSFUL_LOGIN)){
-            return;
-        }
+        final Player p = e.getPlayer();
         if(e.getPlayer().hasPermission("vmessage.silent.leave")){
             return;
         }
-        final Player p = e.getPlayer();
+        // 被 /kick 踢出去的：[Kick] 已经广播过一条了，这里不能再补一条 [Leave]
+        if (kickTracker.consume(p.getUniqueId())) {
+            return;
+        }
+        // 登录没成功（版本不符、封禁、顶号、登录阶段被拒……）或断开时不在任何服上
+        // → 走 [Disconnect]。这一档没有服务器名可用。
+        if (!e.getLoginStatus().equals(DisconnectEvent.LoginStatus.SUCCESSFUL_LOGIN)
+                || p.getCurrentServer().isEmpty()) {
+            disconnect(p);
+            return;
+        }
+        if (!configuration.isLeaveEnabled()) {
+            return;
+        }
         final Optional<ServerConnection> server = p.getCurrentServer();
         if (server.isEmpty()) {
             return;
@@ -146,19 +157,7 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = FormatCleaner.finish(luckperms(message, p));
         }
-        String discordRaw;
-        if(VMessage.isDiscord()){
-            String dump = "";
-            String[] dump2 = message.replace("&", "§").split("§");
-            proxyServer.sendMessage(Component.text(Arrays.toString(dump2)));
-            for(String string : dump2){
-                if(string.length() >1)
-                    dump = dump+string.substring(1);
-            }
-            discordRaw = dump;
-        } else {
-            discordRaw = message;
-        }
+        final String discordRaw = discordRaw(message);
         if (configuration.isMinimessageEnabled()) {
             proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
 			if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
@@ -176,6 +175,8 @@ public final class Listeners {
         if (!(e.getResult() instanceof KickedFromServerEvent.DisconnectPlayer)) {
             return;
         }
+        // 记一笔：踢完紧接着的 DisconnectEvent 不该再播一条 [Leave]（onLeave 里消费）
+        kickTracker.mark(e.getPlayer().getUniqueId());
         if(e.getPlayer().hasPermission("vmessage.silent.leave")){
             return;
         }
@@ -206,19 +207,7 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = FormatCleaner.finish(luckperms(message, p));
         }
-        String discordRaw;
-        if(VMessage.isDiscord()){
-            String dump = "";
-            String[] dump2 = message.replace("&", "§").split("§");
-            proxyServer.sendMessage(Component.text(Arrays.toString(dump2)));
-            for(String string : dump2){
-                if(string.length() >1)
-                    dump = dump+string.substring(1);
-            }
-            discordRaw = dump;
-        } else {
-            discordRaw = message;
-        }
+        final String discordRaw = discordRaw(message);
         if (configuration.isMinimessageEnabled()) {
             proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
 			if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
@@ -272,19 +261,7 @@ public final class Listeners {
             if (luckPermsAPI != null) {
                 message = FormatCleaner.finish(luckperms(message, p));
             }
-            String discordRaw;
-            if(VMessage.isDiscord()){
-                String dump = "";
-                String[] dump2 = message.replace("&", "§").split("§");
-                proxyServer.sendMessage(Component.text(Arrays.toString(dump2)));
-                for(String string : dump2){
-                    if(string.length() >1)
-                        dump = dump+string.substring(1);
-                }
-                discordRaw = dump;
-            } else {
-                discordRaw = message;
-            }
+        final String discordRaw = discordRaw(message);
             if (configuration.isMinimessageEnabled()) {
                 proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
 				 if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
@@ -321,19 +298,7 @@ public final class Listeners {
             if (luckPermsAPI != null) {
                 message = FormatCleaner.finish(luckperms(message, p));
             }
-            String discordRaw;
-            if(VMessage.isDiscord()){
-                String dump = "";
-                String[] dump2 = message.replace("&", "§").split("§");
-                proxyServer.sendMessage(Component.text(Arrays.toString(dump2)));
-                for(String string : dump2){
-                    if(string.length() >1)
-                        dump = dump+string.substring(1);
-                }
-                discordRaw = dump;
-            } else {
-                discordRaw = message;
-            }
+        final String discordRaw = discordRaw(message);
             if (configuration.isMinimessageEnabled()) {
                 proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
 				if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
@@ -343,6 +308,65 @@ public final class Listeners {
             }
         }
     }
+    /**
+     * 人还没进任何服就被断开 —— 对齐 velocity-chat 的 [disconnect]。
+     *
+     * 与 [Leave] 的区别：没有服务器名（人根本没落到子服上），所以只有 #player# 和 LuckPerms 的那些占位符。
+     * 发给【全体在线玩家】（跟 Join/Leave/Kick 一样走 proxyServer.sendMessage）。
+     */
+    private void disconnect(final Player p) {
+        if (!configuration.isDisconnectEnabled()) {
+            return;
+        }
+        final List<String> cmds = configuration.getDisconnectcmd();
+        if (cmds != null && !cmds.isEmpty()) {
+            for (String s : cmds) {
+                s = s.replace("#player#", p.getUsername());
+                if (luckPermsAPI != null) {
+                    s = FormatCleaner.removeHoles(luckperms(s, p));
+                }
+                proxyServer.getCommandManager().executeAsync(proxyServer.getConsoleCommandSource(), s);
+            }
+        }
+        String message = configuration.getDisconnectFormat();
+        if (message.isEmpty()) {
+            return;
+        }
+        message = message.replace("#player#", p.getUsername());
+        if (luckPermsAPI != null) {
+            message = FormatCleaner.finish(luckperms(message, p));
+        }
+        final String discordRaw = discordRaw(message);
+        if (configuration.isMinimessageEnabled()) {
+            proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
+            if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+        } else {
+            proxyServer.sendMessage(SERIALIZER.deserialize(message));
+            if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+        }
+    }
+
+    /**
+     * Discord 要的是纯文本，颜色码得剥掉。
+     *
+     * ⚠️ 上游这里有一句 `proxyServer.sendMessage(Component.text(Arrays.toString(dump2)))` ——
+     *    那是调试残留，装了 VelocityDiscord 时每次进/出/切服都会向【全服】广播一句
+     *    `[&e, xxx离开了...]` 这样的数组文本。已删。
+     */
+    private static String discordRaw(final String message) {
+        if (!VMessage.isDiscord()) {
+            return message;
+        }
+        final String[] parts = message.replace("&", "§").split("§");
+        final StringBuilder dump = new StringBuilder();
+        for (final String part : parts) {
+            if (part.length() > 1) {
+                dump.append(part, 1, part.length());
+            }
+        }
+        return dump.toString();
+    }
+
     private String luckperms(String message, final Player p) {
         final CachedMetaData data = luckPermsAPI.getPlayerAdapter(Player.class).getMetaData(p);
         final String prefix = data.getPrefix();
