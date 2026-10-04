@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.TimeUnit;
 
 @SuppressWarnings({"UnstableApiUsage", "deprecation"})
 public final class Listeners {
@@ -55,13 +56,20 @@ public final class Listeners {
     private LuckPerms luckPermsAPI;
     private final Configuration configuration;
     private final ProxyServer proxyServer;
+    /** 延迟转发要靠它建调度任务（Velocity 的调度器要求传插件实例）。 */
+    private final VMessage plugin;
+    /** 子服发来的「这条聊天被取消了」信号；null 表示没启用。 */
+    private final Suppression suppression;
 
-    Listeners(final ProxyServer proxyServer, final Configuration configuration) {
+    Listeners(final VMessage plugin, final ProxyServer proxyServer,
+              final Configuration configuration, final Suppression suppression) {
         if (proxyServer.getPluginManager().getPlugin("luckperms").isPresent()) {
             this.luckPermsAPI = LuckPermsProvider.get();
         }
+        this.plugin = plugin;
         this.configuration = configuration;
         this.proxyServer = proxyServer;
+        this.suppression = suppression;
     }
     @Subscribe
     private void onMessage(final PlayerChatEvent e) {
@@ -71,7 +79,26 @@ public final class Listeners {
         if(configuration.isAllEnabled()){
             e.setResult(PlayerChatEvent.ChatResult.denied());
         }
-        message(e.getPlayer(), e.getMessage());
+        final Player p = e.getPlayer();
+        final String m = e.getMessage();
+        if (!configuration.isAwaitCancelSignal() || suppression == null) {
+            message(p, m);
+            return;
+        }
+        // 先等一小会儿再转发：子服插件可能把这条聊天取消掉（商店输入数量、菜单输入、签到输入……）。
+        // 子服那边会回一句「这条被取消了」；到期还没等到，就说明是正常聊天，照常转发。
+        // ⚠️ 只推迟「发给别的子服」这一步 —— 玩家自己所在服的聊天是子服自己广播的，不受影响。
+        // ⚠️ 命中抑制时整条都不做：跨服转发、Message.commands、Discord 转发一律跳过。
+        proxyServer.getScheduler().buildTask(plugin, () -> {
+            if (suppression.consume(p.getUniqueId(), m)) {
+                return;
+            }
+            // 等的这会儿玩家可能掉线了、或正在切服（这时 getCurrentServer() 是空的）
+            if (!p.isActive() || p.getCurrentServer().isEmpty()) {
+                return;
+            }
+            message(p, m);
+        }).delay(configuration.getAwaitCancelTimeoutMillis(), TimeUnit.MILLISECONDS).schedule();
     }
     @Subscribe
     private void onLeave(final DisconnectEvent e) {

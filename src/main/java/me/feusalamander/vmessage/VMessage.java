@@ -38,6 +38,8 @@ public class VMessage {
     private static boolean discord;
     private static PapiBridge papi;
     private Configuration configuration;
+    /** 收子服发来的「这条聊天被取消了」信号。 */
+    private Suppression suppression;
     /** 自动热重载：记住上次的修改时间，变了才重读 */
     private long lastConfigModified;
     /** 上一次重载失败的原因，给 /vmessage reload 的失败提示用。 */
@@ -75,7 +77,11 @@ public class VMessage {
         }
         createPapi();
         metricsFactory.make(this, 16527);
-        listeners = new Listeners(proxy, configuration);
+        // 收子服的「这条聊天被取消了」信号 —— 子服要装 VmessageSuppress 才会有
+        suppression = new Suppression(configuration, logger);
+        proxy.getChannelRegistrar().register(Suppression.CHANNEL);
+        proxy.getEventManager().register(this, suppression);
+        listeners = new Listeners(this, proxy, configuration, suppression);
         proxy.getEventManager().register(this, listeners);
         logger.info("Vmessage by FeuSalamander is working !");
         reportConfig();
@@ -113,6 +119,10 @@ public class VMessage {
                 + (configuration.isLinkEnabled()
                     ? "显示为 " + configuration.getLinkText() + "（可点击，悬停看完整网址）"
                     : "不处理"));
+        logger.info("[vmessage] 被子服取消的聊天：" + (configuration.isAwaitCancelSignal()
+                ? "等 " + configuration.getAwaitCancelTimeoutMillis() + " 毫秒，收到抑制信号就不转发"
+                  + "（各子服需装 VmessageSuppress，没装则每次等到超时）"
+                : "不处理（照常转发）"));
     }
 
     /** 定时比对 config.toml 的修改时间，变了就自动重载。 */

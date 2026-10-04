@@ -71,6 +71,15 @@ public final class Configuration {
      */
     private volatile String gradientPermission = "vmessage.gradient";
     private volatile Map<String, String> namedColors = Collections.emptyMap();
+    /**
+     * 等不等子服回一句「这条聊天被我取消掉了」。
+     * 子服插件（商店输入数量、菜单输入……）取消聊天的事发生在代理转发之后，
+     * 且没有机制回传给代理 —— 只能靠子服这边主动说一声。
+     * 需要各子服装配套插件 VmessageSuppress；没装的话每次都等到超时，行为与关闭时一致。
+     */
+    private volatile boolean awaitCancelSignal;
+    /** 最多等多少毫秒；期间没收到信号就当正常聊天照常转发（上限 1000）。 */
+    private volatile long awaitCancelTimeoutMillis;
     /** 聊天内容里的网址做成可点击短文本（[链接]，点一下打开浏览器）。 */
     private volatile boolean linkEnabled;
     /** 链接显示的文字（支持 & 颜色码）。 */
@@ -155,6 +164,12 @@ public final class Configuration {
         final String perm = config.getString("Message.gradient-permission", "vmessage.gradient");
         gradientPermission = perm == null ? "" : perm.trim();
         namedColors = readNamedColors(config);
+
+        // ---- 被子服插件取消的聊天（商店输入数量、菜单输入等）----
+        awaitCancelSignal = config.getBoolean("Message.await-cancel-signal", true);
+        // 上限 1 秒：再久别的服看到消息就会有明显延迟，也说明子服那边不正常
+        awaitCancelTimeoutMillis = Math.min(1000L, Math.max(0L,
+                config.getLong("Message.await-cancel-timeout-millis", 100L)));
 
         // ---- 聊天里的网址 ----
         linkEnabled = config.getBoolean("Link.enabled", true);
@@ -386,6 +401,16 @@ public final class Configuration {
     /** CMI 风格命名色 {#名字} → hex（不含 #），小写键。 */
     public Map<String, String> getNamedColors() {
         return this.namedColors;
+    }
+
+    /** 是否等子服回「这条聊天被取消了」的信号（需各子服装 VmessageSuppress）。 */
+    public boolean isAwaitCancelSignal() {
+        return this.awaitCancelSignal;
+    }
+
+    /** 最多等多少毫秒；期间没收到信号就当正常聊天照常转发。 */
+    public long getAwaitCancelTimeoutMillis() {
+        return this.awaitCancelTimeoutMillis;
     }
     /** 聊天里的网址要不要做成可点击短文本。 */
     public boolean isLinkEnabled() {
