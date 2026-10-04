@@ -119,10 +119,31 @@ public class VMessage {
                 + (configuration.isLinkEnabled()
                     ? "显示为 " + configuration.getLinkText() + "（可点击，悬停看完整网址）"
                     : "不处理"));
+        reportServerFilter();
         logger.info("[vmessage] 被子服取消的聊天：" + (configuration.isAwaitCancelSignal()
                 ? "等 " + configuration.getAwaitCancelTimeoutMillis() + " 毫秒，收到抑制信号就不转发"
                   + "（各子服需装 VmessageSuppress，没装则每次等到超时）"
                 : "不处理（照常转发）"));
+    }
+
+    /**
+     * 打印「哪些服参与跨服聊天」。
+     * 白名单配成空列表是个很容易踩的坑（等于全服断流），所以单独用 WARN 喊一声。
+     */
+    private void reportServerFilter() {
+        final String list = String.join(", ", configuration.getServerFilter());
+        if (configuration.isServerFilterWhitelist()) {
+            if (list.isEmpty()) {
+                logger.warn("[vmessage] 跨服聊天是【白名单】模式但名单是空的 —— 没有任何服会收到跨服聊天"
+                        + "（想恢复就让 server-filter 里写上服名，或把 server-filter-mode 改回 blacklist）");
+            } else {
+                logger.info("[vmessage] 参与跨服聊天的服（白名单）：" + list);
+            }
+            return;
+        }
+        if (!list.isEmpty()) {
+            logger.info("[vmessage] 不参与跨服聊天的服（黑名单）：" + list);
+        }
     }
 
     /** 定时比对 config.toml 的修改时间，变了就自动重载。 */

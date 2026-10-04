@@ -80,6 +80,14 @@ public final class Configuration {
     private volatile boolean awaitCancelSignal;
     /** 最多等多少毫秒；期间没收到信号就当正常聊天照常转发（上限 1000）。 */
     private volatile long awaitCancelTimeoutMillis;
+    /**
+     * 参与跨服聊天的子服范围（server-filter 的两种读法）。
+     * false = 黑名单：名单里的服不参与，其余都参与 —— 名单为空就是「全部参与」（默认，与没这个功能时一样）
+     * true  = 白名单：只有名单里的服参与 —— 名单为空就是「谁都不参与」，等于把跨服聊天关掉
+     */
+    private volatile boolean serverFilterWhitelist;
+    /** server-filter 里写的服务器名，存小写；用 velocity.toml 里注册的名字。 */
+    private volatile Set<String> serverFilter = new LinkedHashSet<>();
     /** 聊天内容里的网址做成可点击短文本（[链接]，点一下打开浏览器）。 */
     private volatile boolean linkEnabled;
     /** 链接显示的文字（支持 & 颜色码）。 */
@@ -170,6 +178,13 @@ public final class Configuration {
         // 上限 1 秒：再久别的服看到消息就会有明显延迟，也说明子服那边不正常
         awaitCancelTimeoutMillis = Math.min(1000L, Math.max(0L,
                 config.getLong("Message.await-cancel-timeout-millis", 100L)));
+
+        // ---- 参与跨服聊天的子服范围 ----
+        // 只认 blacklist / whitelist 两个词；写错、留空都当黑名单（默认全参与，不会静默断流）
+        final String filterMode = config.getString("Message.server-filter-mode", "blacklist");
+        serverFilterWhitelist = filterMode != null && filterMode.trim().equalsIgnoreCase("whitelist");
+        // 整个集合替换，不在原集合上 clear+addAll —— 免得别的线程读到「清空了但还没填」的中间态
+        serverFilter = readServerList(config, "Message.server-filter");
 
         // ---- 聊天里的网址 ----
         linkEnabled = config.getBoolean("Link.enabled", true);
@@ -412,6 +427,29 @@ public final class Configuration {
     public long getAwaitCancelTimeoutMillis() {
         return this.awaitCancelTimeoutMillis;
     }
+    /**
+     * 这个服参不参与跨服聊天 —— 不参与的服既不往外发，也不收别服的消息。
+     * 传 velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名），大小写不敏感。
+     * ⚠️ 名字取不到时按「参与」处理：宁可多发一条，也别因为取不到名字就静默断流。
+     */
+    public boolean isChatServerAllowed(final String serverName) {
+        if (serverName == null) {
+            return true;
+        }
+        final boolean listed = serverFilter.contains(serverName.toLowerCase(Locale.ROOT));
+        return serverFilterWhitelist == listed;
+    }
+
+    /** server-filter 是不是白名单模式（true = 只有名单里的服参与）。 */
+    public boolean isServerFilterWhitelist() {
+        return this.serverFilterWhitelist;
+    }
+
+    /** 当前生效的 server-filter（小写），只在日志里用。 */
+    public Set<String> getServerFilter() {
+        return Collections.unmodifiableSet(serverFilter);
+    }
+
     /** 聊天里的网址要不要做成可点击短文本。 */
     public boolean isLinkEnabled() {
         return this.linkEnabled;

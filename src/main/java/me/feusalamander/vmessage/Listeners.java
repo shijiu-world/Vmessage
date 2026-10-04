@@ -76,11 +76,19 @@ public final class Listeners {
         if (!configuration.isMessageEnabled()) {
             return;
         }
+        final Player p = e.getPlayer();
+        final String m = e.getMessage();
+        // 这个服不参与跨服聊天：整条都不做 —— 不转发、不跑 Message.commands、不进 Discord。
+        // ⚠️ 连原始聊天也不能 deny：all=true 时代理是靠自己重发来保证大家看得到的，
+        //    这里 deny 了却不代发，该服玩家的聊天就被彻底吞掉了。
+        final Optional<ServerConnection> current = p.getCurrentServer();
+        if (current.isEmpty()
+                || !configuration.isChatServerAllowed(current.get().getServerInfo().getName())) {
+            return;
+        }
         if(configuration.isAllEnabled()){
             e.setResult(PlayerChatEvent.ChatResult.denied());
         }
-        final Player p = e.getPlayer();
-        final String m = e.getMessage();
         if (!configuration.isAwaitCancelSignal() || suppression == null) {
             message(p, m);
             return;
@@ -489,6 +497,10 @@ public final class Listeners {
         final boolean forceAlt = sender != null && configuration.isNoPapiServer(sender.getName());
         final boolean all = configuration.isAllEnabled();
         for (final RegisteredServer server : proxyServer.getAllServers()) {
+            // server-filter：名单外的服不参与跨服聊天，一条都不发过去
+            if (!configuration.isChatServerAllowed(server.getServerInfo().getName())) {
+                continue;
+            }
             // all=false：发送者所在服照常收到它自己的原始聊天（子服插件处理），这里跳过
             if (!all && Objects.equals(sender, server.getServerInfo())) {
                 continue;

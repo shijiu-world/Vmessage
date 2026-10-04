@@ -93,6 +93,19 @@ gradient-permission = "vmessage.gradient"
 #    效果上与 false 一样，只是别的服看到消息会晚一点。
 await-cancel-signal = true
 
+# ★ 哪些子服参与跨服聊天
+#   名单里写 velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名），大小写都行。
+#   不参与的服：既不把聊天发给别的服，也收不到别服发来的聊天（它自己服内的聊天不受影响）。
+#   排除掉的服，Message.commands 不执行、这条也不转发到 Discord。
+#   本服内部的聊天永远是子服自己广播的，跟这里无关。
+#
+# blacklist（默认）= 名单里的服【不】参与，其余全部参与 → 名单为空就是「全部参与」
+# whitelist         = 【只有】名单里的服参与          → 名单为空就是「谁都不参与」，等于关掉跨服聊天
+#   例 1：起床服和小游戏服别互相串台 → blacklist + ["bedwars", "minigame"]
+#   例 2：只让生存和大厅互通       → whitelist + ["survival", "lobby"]
+server-filter-mode = "blacklist"
+server-filter = []
+
 # 最长等多久（毫秒）。到期还没收到信号，就当正常聊天照常转发。
 # 只影响「别的子服看到这条消息」的时间 —— 玩家自己所在服的聊天由子服自己广播，不受影响。
 # 0 = 不等待（等于关闭）；上限 1000，写大了按 1000 算。一般 100 就够。
