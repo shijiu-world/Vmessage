@@ -37,7 +37,7 @@
 | 文件 | 放到哪 | 必要性 |
 |---|---|---|
 | `PAPIProxyBridge-Bukkit-*.jar` | `plugins/` | 可选，同上 |
-| `VmessageSuppress-1.0.0.jar` | `plugins/` | 可选，见[被子服取消的聊天](#9-被子服取消的聊天不再跨服泄露) |
+| `VmessageSuppress-1.1.1.jar` | `plugins/` | 可选，见[被子服取消的聊天](#9-被子服取消的聊天不再跨服泄露) |
 
 启动后代理日志会打一句 `Vmessage by 拾玖世界 is working !`，随后逐条报告当前生效的配置
 （哪些服参与、等不等抑制信号、网址怎么处理等）——配置错了在日志里一眼能看出来。
@@ -414,7 +414,7 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 ```bash
 javac -encoding UTF-8 --release 17 -cp <服务端 API jar> -d out src/main/java/cn/shijiu/vmessagesuppress/VmessageSuppress.java
 cp src/main/resources/plugin.yml src/main/resources/config.yml out/
-jar cf target/VmessageSuppress-1.0.0.jar -C out .
+jar cf target/VmessageSuppress-1.1.1.jar -C out .
 ```
 
 ---
