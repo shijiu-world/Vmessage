@@ -90,21 +90,22 @@ public final class Listeners {
     }
     @Subscribe
     private void onMessage(final PlayerChatEvent e) {
-        if (!configuration.isMessageEnabled()) {
-            return;
-        }
         final Player p = e.getPlayer();
-        final String m = e.getMessage();
-        // 这个服不参与跨服聊天：整条都不做 —— 不转发、不跑 Message.commands、不进 Discord。
+        final Optional<ServerConnection> current = p.getCurrentServer();
+        // 这个服不参与跨服聊天（或 Message.enabled 关了）：整条都不做 ——
+        // 不转发、不跑 Message.commands、不进 Discord。
         // ⚠️ 连原始聊天也不能 deny：all=true 时代理是靠自己重发来保证大家看得到的，
         //    这里 deny 了却不代发，该服玩家的聊天就被彻底吞掉了。
-        final Optional<ServerConnection> current = p.getCurrentServer();
-        if (current.isEmpty()
-                || !configuration.isChatServerAllowed(current.get().getServerInfo().getName())) {
+        if (!canSpeakHere(p)) {
             return;
         }
+        final String m = e.getMessage();
         if(configuration.isAllEnabled()){
             e.setResult(PlayerChatEvent.ChatResult.denied());
+            // ⚠️ all=true 时代理自己重发、原始聊天根本不会发到子服 —— 子服也就不可能产生抑制信号，
+            //    这时候再等一个超时纯属白等（每条聊天都平白多出 await-cancel-timeout-millis 的延迟）。
+            message(p, m);
+            return;
         }
         // 这个服不排队等信号 —— 要么没装 VmessageSuppress（名单里排除了），要么功能关了。
         // 直接转发，别的服看到消息零延迟；代价是被子服取消的聊天（商店输入等）会漏过去。
@@ -117,16 +118,37 @@ public final class Listeners {
         // 子服那边会回一句「这条被取消了」；到期还没等到，就说明是正常聊天，照常转发。
         // ⚠️ 只推迟「发给别的子服」这一步 —— 玩家自己所在服的聊天是子服自己广播的，不受影响。
         // ⚠️ 命中抑制时整条都不做：跨服转发、Message.commands、Discord 转发一律跳过。
+        // ⚠️ 登记必须在调度【之前】：记下本次等待的开始时刻，并丢掉上一轮迟到的陈旧信号
+        //    （等待窗口比信号有效期短得多，超时之后才到的信号会污染下一条内容相同的聊天）。
+        suppression.beginWait(p.getUniqueId(), m);
         proxyServer.getScheduler().buildTask(plugin, () -> {
             if (suppression.consume(p.getUniqueId(), m)) {
                 return;
             }
+            // 超时了，按正常聊天处理 —— 先把这一轮的记录清干净，别让迟到的信号污染下一次
+            suppression.endWait(p.getUniqueId(), m);
             // 等的这会儿玩家可能掉线了、或正在切服（这时 getCurrentServer() 是空的）
             if (!p.isActive() || p.getCurrentServer().isEmpty()) {
                 return;
             }
             message(p, m);
         }).delay(configuration.getAwaitCancelTimeoutMillis(), TimeUnit.MILLISECONDS).schedule();
+    }
+
+    /**
+     * 这个玩家现在说的一句话要不要走跨服聊天 —— Message.enabled 与 server-filter 两道闸。
+     *
+     * <p>/sendall 也得过这两道闸：不然玩家能从一个「不参与跨服聊天」的服（或 Message.enabled = false 时）
+     * 把话喊到全服，等于绕过了配置。
+     */
+    public boolean canSpeakHere(final Player p) {
+        if (!configuration.isMessageEnabled()) {
+            return false;
+        }
+        final Optional<ServerConnection> current = p.getCurrentServer();
+        // 还没落到子服上（刚登录、正在切服）：拿不到服务器名，按「不参与」处理
+        return current.isPresent()
+                && configuration.isChatServerAllowed(current.get().getServerInfo().getName());
     }
     @Subscribe
     private void onLeave(final DisconnectEvent e) {
@@ -177,10 +199,10 @@ public final class Listeners {
         final String discordRaw = discordRaw(message);
         if (configuration.isMinimessageEnabled()) {
             proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-			if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+			trySendDiscord(discordRaw);
         } else {
             proxyServer.sendMessage(SERIALIZER.deserialize(message));
-			if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+			trySendDiscord(discordRaw);
         }
 
     }
@@ -227,10 +249,10 @@ public final class Listeners {
         final String discordRaw = discordRaw(message);
         if (configuration.isMinimessageEnabled()) {
             proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-			if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+			trySendDiscord(discordRaw);
         } else {
             proxyServer.sendMessage(SERIALIZER.deserialize(message));
-			if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+			trySendDiscord(discordRaw);
         }
 
     }
@@ -256,7 +278,8 @@ public final class Listeners {
                 actualservername = configuration.getAliases().getString(actualservername);
             }
             String oldservername = pre.getServerInfo().getName();
-            if(configuration.getAliases().containsTable(oldservername)){
+            // ⚠️ 别名是 String（[Aliases] 里 "生存" = "survival" 这种），要用 contains 而不是 containsTable
+            if(configuration.getAliases().contains(oldservername)){
                 oldservername = configuration.getAliases().getString(oldservername);
             }
             if(configuration.getChangecmd() != null&&!configuration.getChangecmd().isEmpty())
@@ -281,10 +304,10 @@ public final class Listeners {
         final String discordRaw = discordRaw(message);
             if (configuration.isMinimessageEnabled()) {
                 proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-				 if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+				 trySendDiscord(discordRaw);
             } else {
                 proxyServer.sendMessage(SERIALIZER.deserialize(message));
-				 if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+				 trySendDiscord(discordRaw);
             }
         } else if (serverConnection.isPresent()){
             if (!configuration.isJoinEnabled()) {
@@ -318,10 +341,10 @@ public final class Listeners {
         final String discordRaw = discordRaw(message);
             if (configuration.isMinimessageEnabled()) {
                 proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-				if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+				trySendDiscord(discordRaw);
             } else {
                 proxyServer.sendMessage(SERIALIZER.deserialize(message));
-				if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+				trySendDiscord(discordRaw);
             }
         }
     }
@@ -356,10 +379,10 @@ public final class Listeners {
         final String discordRaw = discordRaw(message);
         if (configuration.isMinimessageEnabled()) {
             proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-            if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+            trySendDiscord(discordRaw);
         } else {
             proxyServer.sendMessage(SERIALIZER.deserialize(message));
-            if(VMessage.isDiscord())VelocityDiscord.getDiscord().sendMessage(discordRaw);
+            trySendDiscord(discordRaw);
         }
     }
 
@@ -377,6 +400,30 @@ public final class Listeners {
      */
     private static String discordRaw(final String message) {
         return VMessage.isDiscord() ? stripColors(message) : message;
+    }
+
+    /**
+     * 往 Discord 转发一句（装了 discord 插件、且开关打开时才真发）。
+     *
+     * <p>⚠️ 为什么不能直接 `VelocityDiscord.getDiscord().sendMessage(...)`：
+     * 本插件自带的是【占位实现】（ooo.foooooooooooo.velocitydiscord.VelocityDiscord 恒返回 null），
+     * 而开关判的是「代理里有没有加载 id 为 discord 的插件」。Velocity 各插件 ClassLoader 隔离，
+     * Vmessage 只能看到自己这份 stub —— 一旦代理装了真实的 discord 插件，这里必然 NPE。
+     * NPE 抛在聊天/进出服的事件处理里会打断后面的逻辑（deliver 里那一处更是会让所有子服一条都收不到），
+     * 所以这里判空 + 兜住所有 Throwable：Discord 转发失效可以接受，消息转发不能跟着崩。
+     */
+    private static void trySendDiscord(final String plain) {
+        if (!VMessage.isDiscord()) {
+            return;
+        }
+        try {
+            final VelocityDiscord.Discord discord = VelocityDiscord.getDiscord();
+            if (discord != null) {
+                discord.sendMessage(plain);
+            }
+        } catch (final Throwable ignored) {
+            // 转发失败就算了，不能影响跨服聊天本身
+        }
     }
 
     /** 删掉颜色码（&c / &#RRGGBB / §c），正文一字不动。包内可见，便于单测。 */
@@ -462,9 +509,15 @@ public final class Listeners {
         return luckPermsAPI != null ? luckperms(s, p) : s;
     }
     public void message(final Player p, final String m) {
+        final Optional<ServerConnection> current = p.getCurrentServer();
+        // ⚠️ 取不到就放弃，不要 orElseThrow()：玩家刚登录还没落到子服（/sendall、延迟转发任务
+        //    都可能撞上这个瞬间）时会抛 NoSuchElementException，把整条消息连带后面的处理一起打断。
+        if (current.isEmpty()) {
+            return;
+        }
         final String actualservername;
         {
-            final String raw = p.getCurrentServer().orElseThrow().getServerInfo().getName();
+            final String raw = current.get().getServerInfo().getName();
             actualservername = configuration.getAliases().contains(raw)
                     ? configuration.getAliases().getString(raw) : raw;
         }
@@ -524,11 +577,12 @@ public final class Listeners {
         final Component altComponent = altFormat.isEmpty() ? mainComponent
                 : altFormat.equals(mainFormat) ? mainComponent
                 : build(altFormat, content, mini, permission, colorMode, namedColors, gradient);
+        // ⚠️ 这一句在发服循环【之前】：真崩了的话所有子服一条都收不到，所以必须兜住
         if (VMessage.isDiscord()) {
             final String source = mainFormat.isEmpty() ? altFormat : mainFormat;
             // ⚠️ #message# 在这一步才换成玩家真正说的话 —— 上面那两个组件里是换好了的，
             //    但 Discord 要的是纯文本，只能在这里自己换一次（以前漏了这步，Discord 上全是 "#message#"）。
-            VelocityDiscord.getDiscord().sendMessage(discordRaw(source.replace("#message#", content)));
+            trySendDiscord(discordRaw(source.replace("#message#", content)));
         }
         final com.velocitypowered.api.proxy.server.ServerInfo sender =
                 p.getCurrentServer().map(ServerConnection::getServerInfo).orElse(null);
@@ -547,7 +601,11 @@ public final class Listeners {
             }
             final boolean noPapi = forceAlt || configuration.isNoPapiServer(server.getServerInfo().getName());
             // 备用格式没配（null）时退回常规格式 —— 宁可有空段，也别整条消息没了
-            final Component target = noPapi && altComponent != null ? altComponent : mainComponent;
+            // ⚠️ 主格式为空（Message.format = ""）时 mainComponent 是 null，这里要退回备用格式，
+            //    否则非 no-papi 的服一条都收不到（整条消息凭空消失）
+            final Component target = noPapi && altComponent != null
+                    ? altComponent
+                    : (mainComponent != null ? mainComponent : altComponent);
             if (target == null) {
                 continue;
             }

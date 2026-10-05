@@ -35,8 +35,10 @@ public class VMessage {
     private final Metrics.Factory metricsFactory;
     private final Path dataDirectory;
     public Listeners listeners;
-    private static boolean discord;
-    private static PapiBridge papi;
+    // ⚠️ 这两个是别的线程（聊天事件、异步 PAPI 回调）也要读的静态字段，
+    //    没有 volatile 就没有 happens-before，可能读到「写了一半」的旧值
+    private static volatile boolean discord;
+    private static volatile PapiBridge papi;
     private Configuration configuration;
     /** 收子服发来的「这条聊天被取消了」信号。 */
     private Suppression suppression;
@@ -56,6 +58,7 @@ public class VMessage {
 
     @Subscribe
     private void onProxyInitialization(ProxyInitializeEvent event) {
+        reportDiscordStub();
         // 命令先注册：万一配置文件读不出来，至少 /vmessage reload 还在，能自救
         CommandManager commandManager = proxy.getCommandManager();
         // ⚠️ 主名必须是小写：Velocity 底层走 Brigadier，literal 节点大小写敏感，
@@ -78,9 +81,14 @@ public class VMessage {
         createPapi();
         metricsFactory.make(this, 16527);
         // 收子服的「这条聊天被取消了」信号 —— 子服要装 VmessageSuppress 才会有
-        suppression = new Suppression(configuration, logger);
+        suppression = new Suppression(proxy, configuration, logger);
         proxy.getChannelRegistrar().register(Suppression.CHANNEL);
         proxy.getEventManager().register(this, suppression);
+        // 抑制信号 / 等待记录里超过有效期的残留，定时清一遍。
+        // ⚠️ 不能挂在 auto-reload 那个任务上 —— 它默认关着，关着就不清理了。
+        proxy.getScheduler().buildTask(this, suppression::purge)
+                .repeat(30L, TimeUnit.SECONDS)
+                .schedule();
         listeners = new Listeners(this, proxy, configuration, suppression);
         proxy.getEventManager().register(this, listeners);
         logger.info("Vmessage by 拾玖世界 is working !");
@@ -101,6 +109,23 @@ public class VMessage {
                     .delay(5, TimeUnit.SECONDS)
                     .schedule();
         }
+    }
+
+    /**
+     * 装了真实 discord 插件时喊一声：Discord 转发其实是不会生效的。
+     *
+     * <p>本插件自带一份 <code>ooo.foooooooooooo.velocitydiscord.VelocityDiscord</code> 占位实现
+     * （getDiscord() 恒返回 null）用来编译；而开关判的是代理里有没有加载 id 为 discord 的插件。
+     * Velocity 各插件 ClassLoader 隔离，Vmessage 只能看到自己这份 stub —— 拿不到真实实例，
+     * 转发自然不会生效。用 WARN 而不是 ERROR：这不是故障，只是这个功能不可用，其它功能不受影响。
+     */
+    private void reportDiscordStub() {
+        if (!discord) {
+            return;
+        }
+        logger.warn("[vmessage] 检测到代理装了 discord 插件，但 Discord 转发不会生效："
+                + "本插件自带的是占位实现（VelocityDiscord stub），各插件 ClassLoader 隔离，"
+                + "跨插件拿不到真实的 Discord 实例（其它功能不受影响）。");
     }
 
     /** 打印当前生效的关键配置（起服和每次 reload 后都打一遍，方便确认到底生效了没）。 */
@@ -197,8 +222,9 @@ public class VMessage {
             if (now == lastConfigModified) {
                 return;
             }
-            lastConfigModified = now;
+            // ⚠️ 重载成功才记账：先记账的话，读失败时这一版改动就再也不会被检测到（只能重启代理）
             if (reload()) {
+                lastConfigModified = now;
                 logger.info("[vmessage] 检测到 config.toml 已修改，已自动重载。");
             }
         }).repeat(Math.max(1L, seconds), TimeUnit.SECONDS).schedule();

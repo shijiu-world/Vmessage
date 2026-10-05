@@ -117,7 +117,7 @@ public final class Configuration {
     private volatile List<String> changecmd;
     // 改版：Custom-Meta 支持任意多个槽位，key = 占位符名(对应 #key#)，value = LuckPerms meta 键
     private volatile Map<String, String> customMeta;
-    private volatile Toml aliases;
+    private volatile Toml aliases = emptyToml();
     /**
      * 发给「解析不了 PAPI」的子服的另一套格式（那些服没装 PAPIProxyBridge-Bukkit）。
      * 为空表示不另配 —— 那些服收到的仍是主 format，只是 %xxx% 会被抹掉。
@@ -150,88 +150,180 @@ public final class Configuration {
      * （reload 后仍是启动时的值），现在不会再犯。
      */
     private void apply(final Toml config) {
-        messageFormat = config.getString("Message.format", "");
-        joinFormat = config.getString("Join.format", "");
-        leaveFormat = config.getString("Leave.format", "");
-        kickFormat = config.getString("Kick.format", "");
-        disconnectFormat = config.getString("Disconnect.format", "");
-        changeFormat = config.getString("Server-change.format", "");
+        final String newMessageFormat = config.getString("Message.format", "");
+        final String newJoinFormat = config.getString("Join.format", "");
+        final String newLeaveFormat = config.getString("Leave.format", "");
+        final String newKickFormat = config.getString("Kick.format", "");
+        final String newDisconnectFormat = config.getString("Disconnect.format", "");
+        final String newChangeFormat = config.getString("Server-change.format", "");
 
-        messageEnabled = config.getBoolean("Message.enabled", false);
-        joinEnabled = config.getBoolean("Join.enabled", false);
-        leaveEnabled = config.getBoolean("Leave.enabled", false);
-        kickEnabled = config.getBoolean("Kick.enabled", false);
-        disconnectEnabled = config.getBoolean("Disconnect.enabled", true);
-        changeEnabled = config.getBoolean("Server-change.enabled", false);
+        final boolean newMessageEnabled = config.getBoolean("Message.enabled", false);
+        final boolean newJoinEnabled = config.getBoolean("Join.enabled", false);
+        final boolean newLeaveEnabled = config.getBoolean("Leave.enabled", false);
+        final boolean newKickEnabled = config.getBoolean("Kick.enabled", false);
+        final boolean newDisconnectEnabled = config.getBoolean("Disconnect.enabled", true);
+        final boolean newChangeEnabled = config.getBoolean("Server-change.enabled", false);
 
-        aliases = config.getTable("Aliases");
+        final Toml newAliases = tableOrEmpty(config, "Aliases");
 
-        messagecmd = config.getList("Message.commands");
-        joincmd = config.getList("Join.commands");
-        leavecmd = config.getList("Leave.commands");
-        kickcmd = config.getList("Kick.commands");
-        disconnectcmd = config.getList("Disconnect.commands");
-        changecmd = config.getList("Server-change.commands");
-        minimessage = config.getBoolean("Message-format.minimessage");
-        all = config.getBoolean("Message.all", false);
+        final List<String> newMessagecmd = listOrEmpty(config, "Message.commands");
+        final List<String> newJoincmd = listOrEmpty(config, "Join.commands");
+        final List<String> newLeavecmd = listOrEmpty(config, "Leave.commands");
+        final List<String> newKickcmd = listOrEmpty(config, "Kick.commands");
+        final List<String> newDisconnectcmd = listOrEmpty(config, "Disconnect.commands");
+        final List<String> newChangecmd = listOrEmpty(config, "Server-change.commands");
+        // ⚠️ 全项目唯一没有默认值的 getBoolean：缺键时返回 null，拆箱成 boolean 会 NPE；
+        //    而首次加载时 NPE 会让 VMessage 直接 return（监听器注册不到），只能重启代理。
+        final boolean newMinimessage = Boolean.TRUE.equals(
+                config.getBoolean("Message-format.minimessage", Boolean.FALSE));
+        final boolean newAll = config.getBoolean("Message.all", false);
 
-        papiEnabled = config.getBoolean("Message.papiproxybridge", true);
-        papiCacheMillis = config.getLong("Message.papi-cache-millis", 30000L);
-        papiTimeoutMillis = config.getLong("Message.papi-timeout-millis", 1500L);
-        papiRetryTimes = config.getLong("Message.papi-retry-times", 0L).intValue();
+        final boolean newPapiEnabled = config.getBoolean("Message.papiproxybridge", true);
+        final long newPapiCacheMillis = config.getLong("Message.papi-cache-millis", 30000L);
+        final long newPapiTimeoutMillis = config.getLong("Message.papi-timeout-millis", 1500L);
+        final int newPapiRetryTimes = config.getLong("Message.papi-retry-times", 0L).intValue();
 
         // 玩家聊天内容里的颜色码怎么处理：strip=剥掉 / parse=解析 / keep=原样显示
         final String mode = config.getString("Message.message-colors", "strip");
-        messageColors = normalizeColorMode(mode);
+        final String newMessageColors = normalizeColorMode(mode);
         // 留空 = 任何人都能用渐变
         final String perm = config.getString("Message.gradient-permission", "vmessage.gradient");
-        gradientPermission = perm == null ? "" : perm.trim();
-        namedColors = readNamedColors(config);
+        final String newGradientPermission = perm == null ? "" : perm.trim();
+        final Map<String, String> newNamedColors = readNamedColors(config);
 
         // ---- 被子服插件取消的聊天（商店输入数量、菜单输入等）----
-        awaitCancelSignal = config.getBoolean("Message.await-cancel-signal", true);
+        final boolean newAwaitCancelSignal = config.getBoolean("Message.await-cancel-signal", true);
         // 上限 1 秒：再久别的服看到消息就会有明显延迟，也说明子服那边不正常
-        awaitCancelTimeoutMillis = Math.min(1000L, Math.max(0L,
+        final long newAwaitCancelTimeoutMillis = Math.min(1000L, Math.max(0L,
                 config.getLong("Message.await-cancel-timeout-millis", 100L)));
 
         // ---- 哪些服要等这个信号 ----
         // 只认 blacklist / whitelist 两个词；写错、留空都当黑名单（默认全都等，不会静默关掉抑制）
         final String awaitMode = config.getString("Message.await-cancel-server-mode", "blacklist");
-        suppressAwaitWhitelist = awaitMode != null && awaitMode.trim().equalsIgnoreCase("whitelist");
+        final boolean newSuppressAwaitWhitelist =
+                awaitMode != null && awaitMode.trim().equalsIgnoreCase("whitelist");
         // 整个集合替换，不在原集合上 clear+addAll —— 免得别的线程读到「清空了但还没填」的中间态
-        suppressAwaitServers = readServerList(config, "Message.await-cancel-servers");
+        final Set<String> newSuppressAwaitServers = readServerList(config, "Message.await-cancel-servers");
 
         // ---- 参与跨服聊天的子服范围 ----
         // 只认 blacklist / whitelist 两个词；写错、留空都当黑名单（默认全参与，不会静默断流）
         final String filterMode = config.getString("Message.server-filter-mode", "blacklist");
-        serverFilterWhitelist = filterMode != null && filterMode.trim().equalsIgnoreCase("whitelist");
+        final boolean newServerFilterWhitelist =
+                filterMode != null && filterMode.trim().equalsIgnoreCase("whitelist");
         // 整个集合替换，不在原集合上 clear+addAll —— 免得别的线程读到「清空了但还没填」的中间态
-        serverFilter = readServerList(config, "Message.server-filter");
+        final Set<String> newServerFilter = readServerList(config, "Message.server-filter");
 
         // ---- 聊天里的网址 ----
-        linkEnabled = config.getBoolean("Link.enabled", true);
-        linkText = config.getString("Link.text", "&9[链接]");
-        linkHover = config.getString("Link.hover", "&7点击打开：&f{url}");
-        linkPattern = compilePattern(config.getString("Link.pattern", Linkify.DEFAULT_PATTERN_SOURCE));
+        final boolean newLinkEnabled = config.getBoolean("Link.enabled", true);
+        final String newLinkText = config.getString("Link.text", "&9[链接]");
+        final String newLinkHover = config.getString("Link.hover", "&7点击打开：&f{url}");
+        final Pattern newLinkPattern =
+                compilePattern(config.getString("Link.pattern", Linkify.DEFAULT_PATTERN_SOURCE));
 
-        customMeta = readCustomMeta(config);
+        final Map<String, String> newCustomMeta = readCustomMeta(config);
 
         // ---- 给「没有 PAPI 桥接」的子服用的备用格式 ----
-        noPapiFormat = trimToNull(config.getString("Message.no-papi-format", ""));
-        readBridgeBlacklist = config.getBoolean("Message.read-bridge-blacklist", true);
+        final String newNoPapiFormat = trimToNull(config.getString("Message.no-papi-format", ""));
+        final boolean newReadBridgeBlacklist = config.getBoolean("Message.read-bridge-blacklist", true);
         // 整个集合替换，不在原集合上 clear+addAll —— 免得别的线程读到「清空了但还没填」的中间态
-        noPapiServers = buildNoPapiServers(config);
+        final Set<String> newNoPapiServers = buildNoPapiServers(config, newReadBridgeBlacklist);
 
         // ---- 热重载 ----
-        autoReload = config.getBoolean("auto-reload", false);
-        autoReloadIntervalSeconds = Math.max(1L, config.getLong("auto-reload-interval-seconds", 5L));
+        final boolean newAutoReload = config.getBoolean("auto-reload", false);
+        final long newAutoReloadIntervalSeconds =
+                Math.max(1L, config.getLong("auto-reload-interval-seconds", 5L));
+
+        // ↓↓↓ 全部算完才统一赋值 —— 中途抛异常时旧配置还是完整的一套，不会留下「半套配置」 ↓↓↓
+        messageFormat = newMessageFormat;
+        joinFormat = newJoinFormat;
+        leaveFormat = newLeaveFormat;
+        kickFormat = newKickFormat;
+        disconnectFormat = newDisconnectFormat;
+        changeFormat = newChangeFormat;
+
+        messageEnabled = newMessageEnabled;
+        joinEnabled = newJoinEnabled;
+        leaveEnabled = newLeaveEnabled;
+        kickEnabled = newKickEnabled;
+        disconnectEnabled = newDisconnectEnabled;
+        changeEnabled = newChangeEnabled;
+
+        aliases = newAliases;
+
+        messagecmd = newMessagecmd;
+        joincmd = newJoincmd;
+        leavecmd = newLeavecmd;
+        kickcmd = newKickcmd;
+        disconnectcmd = newDisconnectcmd;
+        changecmd = newChangecmd;
+        minimessage = newMinimessage;
+        all = newAll;
+
+        papiEnabled = newPapiEnabled;
+        papiCacheMillis = newPapiCacheMillis;
+        papiTimeoutMillis = newPapiTimeoutMillis;
+        papiRetryTimes = newPapiRetryTimes;
+
+        messageColors = newMessageColors;
+        gradientPermission = newGradientPermission;
+        namedColors = newNamedColors;
+
+        awaitCancelSignal = newAwaitCancelSignal;
+        awaitCancelTimeoutMillis = newAwaitCancelTimeoutMillis;
+        suppressAwaitWhitelist = newSuppressAwaitWhitelist;
+        suppressAwaitServers = newSuppressAwaitServers;
+
+        serverFilterWhitelist = newServerFilterWhitelist;
+        serverFilter = newServerFilter;
+
+        linkEnabled = newLinkEnabled;
+        linkText = newLinkText;
+        linkHover = newLinkHover;
+        linkPattern = newLinkPattern;
+
+        customMeta = newCustomMeta;
+
+        noPapiFormat = newNoPapiFormat;
+        readBridgeBlacklist = newReadBridgeBlacklist;
+        noPapiServers = newNoPapiServers;
+
+        autoReload = newAutoReload;
+        autoReloadIntervalSeconds = newAutoReloadIntervalSeconds;
 
         this.config = config;
     }
 
-    private Set<String> buildNoPapiServers(final Toml config) {
+    /**
+     * 读一张表；表被用户整段删掉时给一张【空表】而不是 null。
+     * [Aliases] 就是这样：删掉之后 getAliases() 一旦是 null，所有 .contains() 调用点全崩。
+     */
+    private static Toml tableOrEmpty(final Toml config, final String path) {
+        final Toml table = config.getTable(path);
+        if (table != null) {
+            return table;
+        }
+        return emptyToml();
+    }
+
+    /** 一张空的 Toml（读空字符串得到），contains() 一律返回 false。 */
+    private static Toml emptyToml() {
+        try {
+            return new Toml().read("");
+        } catch (final RuntimeException e) {
+            // 理论上不会发生；真发生了就用裸的，至少不会是 null
+            return new Toml();
+        }
+    }
+
+    /** 读一个字符串数组；键缺失时给空列表 —— 调用方不用再判 null。 */
+    private static List<String> listOrEmpty(final Toml config, final String path) {
+        final List<String> list = config.getList(path);
+        return list == null ? Collections.emptyList() : list;
+    }
+
+    private Set<String> buildNoPapiServers(final Toml config, final boolean readBridge) {
         final Set<String> names = readServerList(config, "Message.no-papi-servers");
-        if (!readBridgeBlacklist || pluginsDir == null) {
+        if (!readBridge || pluginsDir == null) {
             return names;
         }
         // 与 PAPIProxyBridge settings.yml 里的黑名单取并集（只加不减，config.toml 里写的永远生效）
@@ -420,8 +512,9 @@ public final class Configuration {
     public List<String> getChangecmd(){
         return this.changecmd;
     }
+    /** [Aliases] 这张表；段被删掉时是空表 —— 永不返回 null（调用方直接 .contains()）。 */
     public Toml getAliases() {
-        return aliases;
+        return aliases == null ? emptyToml() : aliases;
     }
     public Map<String, String> getCustomMeta() {
         return this.customMeta;
@@ -579,8 +672,10 @@ public final class Configuration {
             // 用全新的 Toml 读（不带旧值做默认值），这样删掉的配置项是真的消失
             apply(new Toml().read(file));
             return true;
-        } catch (RuntimeException e) {
-            // TOML 语法错误会抛 IllegalStateException 的包装 —— 不能让它把配置打回默认值
+        } catch (Throwable e) {
+            // ⚠️ 不能只 catch RuntimeException：toml4j 缺依赖（如 gson 不在）时抛的是
+            //    NoClassDefFoundError —— 那是 Error，漏掉它就会一路穿到事件/命令线程上去。
+            //    TOML 语法错误会抛 IllegalStateException 的包装 —— 不能让它把配置打回默认值。
             lastError = e.getMessage() == null ? e.toString() : e.getMessage();
             return false;
         }

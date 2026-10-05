@@ -6,6 +6,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
 import java.util.List;
+import java.util.Locale;
 
 public final class ReloadCommand implements SimpleCommand {
     private final VMessage main;
@@ -43,7 +44,9 @@ public final class ReloadCommand implements SimpleCommand {
     @Override
     public List<String> suggest(final Invocation invocation) {
         final String[] args = invocation.arguments();
-        if (args.length == 0 || (args.length == 1 && "reload".startsWith(args[0]))) {
+        // ⚠️ 大小写敏感的话敲 "/vmessage RELOAD" 就补不出候选了，统一按小写比
+        if (args.length == 0
+                || (args.length == 1 && "reload".startsWith(args[0].toLowerCase(Locale.ROOT)))) {
             return suggestion;
         }
         return List.of();
