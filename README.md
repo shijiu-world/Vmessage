@@ -95,7 +95,7 @@
 
 `await-cancel-signal = true` 时，代理先等 `await-cancel-timeout-millis` 毫秒，
 子服配套的 `VmessageSuppress` 回一句「这条被取消了」就整条不转发
-（跨服转发、`commands`、Discord 转发一起都不做）。
+（跨服转发、`commands` 一起都不做）。
 
 - **失效模式是安全的**：子服没装配套插件，代理每次等到超时就照常转发，不会漏发，
   只是别的服看到消息晚一点。
@@ -146,7 +146,7 @@ server-filter = []                 # velocity.toml 里注册的服务器名，�
 | `whitelist` | **谁都不参与**＝关掉跨服聊天 | 只有名单里的参与 |
 
 - **不参与是双向的**：既不往外发，也收不到别服的聊天；它自己服内部的聊天不受影响。
-- 被排除的服说话时 `commands` 不执行、也不转发 Discord——免得游戏里没有、Discord 上却有。
+- 被排除的服说话时 `commands` 不执行。
 - 白名单配成空列表会打 WARN（那是全服断流，最容易踩的坑）。
 - 模式只认 `blacklist`/`whitelist`，写错或留空退回黑名单；服务器名取不到时按「参与」处理。
   失效模式一律偏向「多发」，不会静默断流。
@@ -339,6 +339,7 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 
 - `src/main/resources/velocity-plugin.json` —— 插件描述，版本由 Maven 过滤自动填入
 - `src/main/java/ooo/foooooooooooo/velocitydiscord/VelocityDiscord.java` —— 仅用于通过编译的 stub
+  （**已随 Discord 转发功能一并删除**，见第 14 条）
 - `pom.xml`：`java.version` 11 → 17
 
 ### 6. 命令名改成小写
@@ -384,10 +385,12 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 | 3 | `/sendall` 只取 `args[0]` | `/sendall 大家好 各位` 只发出「大家好」 |
 | 4 | `/sendall` 的 `hasPermission` 只判 `instanceof Player` | 任何玩家都能全服广播 |
 
+> 注：第 1、2 条只影响 Discord 转发，该功能已整体移除（见第 14 条）。
+
 另外：
 
 - **删掉上游的调试残留**：`Join`/`Leave`/`Kick`/`Server-change` 里各有一句
-  `proxyServer.sendMessage(Component.text(Arrays.toString(dump2)))`——装了 VelocityDiscord 时
+  `proxyServer.sendMessage(Component.text(Arrays.toString(dump2)))`，
   每次进/出/切服都会向**全服**广播一句 `[&e, xxx离开了...]` 这样的数组文本。
 - **剥色会弄坏网址**：`?a=1&b=2` 里的 `&b` 是合法颜色码字符，会被吃掉变成 `?a=1=2`。
   正则加了「后面不是 `=`」的约束。
@@ -430,8 +433,9 @@ mvn package        # 离线：mvn -B -o package
 
 ## 已知限制
 
-- **Discord 集成依赖 [VelocityDiscord](https://github.com/fooooooooooooooo/VelocityDiscord)**，
-  未安装时相关分支不执行。上面 4 个 bug 里有 2 个只在这个插件存在时才暴露。
+- **Discord 转发已整体移除**（原依赖 [VelocityDiscord](https://github.com/fooooooooooooooo/VelocityDiscord)，
+  且因 Velocity 各插件 ClassLoader 隔离、本插件只能看见自带的 stub，装了真插件反而会 NPE）。
+  本项目用不到，故彻底删掉：stub、开关字段、11 处转发调用、剥色正则一并清除。
 - `no-papi-format` 的默认值 `<#player#>: #message#` 里的尖括号在 `minimessage = false` 下
   会原样显示。想要干净的输出建议改成 `&f#player#&7: &r#message#`。
 - 自动热重载的调度任务常驻（默认每 5 秒检查一次），关掉时也在空转——开销极小，暂未优化。

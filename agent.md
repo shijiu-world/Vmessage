@@ -23,20 +23,19 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 
 | 文件 | 行 | 职责 | 动它之前先想清楚 |
 |---|---|---|---|
-| `VMessage.java` | 215 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
-| `Listeners.java` | 597 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑 | 动这里等于动整个插件行为，必看下面「数据流」 |
-| `Configuration.java` | 563 | 全部配置项读取。用 `com.moandjiezana.toml.Toml`（tomlj）解析 | 加配置要同时改 `config.toml` 默认值 + README 表格 |
+| `VMessage.java` | 244 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
+| `Listeners.java` | 582 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑 | 动这里等于动整个插件行为，必看下面「数据流」 |
+| `Configuration.java` | 705 | 全部配置项读取。用 `com.moandjiezana.toml.Toml`（tomlj）解析 | 加配置要同时改 `config.toml` 默认值 + README 表格 |
 | `ChatColors.java` | 278 | 颜色归一化：CMI 全系语法（`&x&F&F...`、3位hex、`{#F00}`、命名色、渐变） | 渐变是「抠哨兵 → 逐字染色 → 插回」 |
 | `FormatCleaner.java` | ~200 | 清理空段：`[&6%guild%&r]` 取不到值时连括号删掉；**PAPI 变量解析成功但值为空**时也要删（靠 mark/resolveMarks 记边界） | ⚠️ 靠哨兵机制，**不能折叠连续空格**（称号值里有空格）；只删紧贴哨兵**左侧**的颜色码 |
 | `Linkify.java` | 96 | 网址 → 可点击 `[链接]` | 正则用 RFC3986 字符集，**不是** `https?://\S+`（中文无空格会吃整句） |
-| `Suppression.java` | 106 | 收子服「这条聊天被取消了」信号，命中则整条丢弃 | 通道 `vmessage:suppress`，配套 `VmessageSuppress` 插件 |
+| `Suppression.java` | 188 | 收子服「这条聊天被取消了」信号，命中则整条丢弃 | 通道 `vmessage:suppress`，配套 `VmessageSuppress` 插件 |
 | `PapiBridge.java` | 136 | 反射调 PAPIProxyBridge 解析 `%xxx%`，带缓存 | 反射是刻意的——桥接是可选依赖，不能编译期硬引 |
 | `PapiBlacklist.java` | 169 | 读 PPB 的 `settings.yml`，把黑名单并入 `no-papi-servers` | 纯文本解析 yml，格式变了会失效（失效模式是取不到 → 按全参与处理） |
 | `KickTracker.java` | 48 | 踢人去重：被 `/kick` 时 Velocity 同时给 `KickedFromServerEvent` 和 `DisconnectEvent` | 标记取一次即失效 + 10 秒兜底 |
 | `ReloadCommand.java` | 51 | `/vmessage reload` | |
 | `SendCommand.java` | 41 | `/sendall` | |
 | `Metrics.java` | 1026 | bStats 统计，**上游自带，不要动** | 改坏了不影响功能但会刷异常 |
-| `ooo.foooooooooooo.velocitydiscord/VelocityDiscord.java` | 9 | **stub**，只为让引用 Discord 的代码编译通过 | 没装真插件时相关分支不执行 |
 
 ---
 
@@ -45,7 +44,7 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 ```
 PlayerChatEvent (Listeners.onMessage)
   ↓ ① 发送者所在服在不在名单里（server-filter-mode/filter）
-  ↓    不在 → 直接 return：不转发、不跑 commands、不进 Discord
+  ↓    不在 → 直接 return：不转发、也不跑 commands
   ↓    ⚠️ 但不能 deny 原始聊天（all=true 时代理靠自己重发，deny 了又不代发 = 吞掉聊天）
   ↓ ② all=true → e.setResult(denied())
   ↓ ③ 这个服要不要等信号（await-cancel-signal 开着 + 该服在 await-cancel-servers 判定内）
@@ -56,7 +55,7 @@ PlayerChatEvent (Listeners.onMessage)
   ↓ ⑤ ChatColors 按 message-colors（strip/parse/keep）+ vmessage.color 权限处理消息内容
   ↓ ⑥ FormatCleaner.finish()：resolveMarks（空值→哨兵）→ stripUnresolved（空括号→哨兵）→ collapse（收空格）→ Linkify 做网址
   ↓ ⑦ 发给「除发送者所在服以外」且通过名单的其它子服
-  ↓ ⑧ 跑 [Message].commands、转发 Discord（装了才走）
+  ↓ ⑧ 跑 [Message].commands
 ```
 
 进出服广播同理，走 `[Join]`/`[Leave]`/`[Kick]`/`[Disconnect]`/`[Server-change]` 五档。
@@ -92,7 +91,7 @@ PlayerChatEvent (Listeners.onMessage)
 |---|---|---|
 | 加一个配置项 | `Configuration.java` + `src/main/resources/config.toml` | README 的配置表格、起服日志里的 `reportConfig` |
 | 加一个占位符 | `Listeners.java` 的 `BUILTIN` 集合 + 替换逻辑 | 内建名不能当 meta 键查 |
-| 消息格式相关 | `Listeners.java` 的 `message()` | 注意 Discord 分支用的是同一条格式串（曾出过 `#message#` 字面量 bug） |
+| 消息格式相关 | `Listeners.java` 的 `message()` | 只此一路，改格式串只影响游戏内显示 |
 | 颜色/渐变语法 | `ChatColors.java` | VWhisper 有一份**同源但独立**的 `ChatColors`，改语法两边都要改 |
 | 网址识别 | `Linkify.java` 的 `pattern` | 默认值在 `config.toml` 的 `[Link]` |
 | 子服参与名单 | `Configuration.buildNoPapiServers` / `isChatServerAllowed` | 白名单配成空 = 全服断流，要打 WARN |

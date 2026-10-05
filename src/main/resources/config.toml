@@ -87,7 +87,7 @@ gradient-permission = "vmessage.gradient"
 # 背景：代理收到聊天的同一时刻就把消息发给了别的子服，而子服插件的取消发生在【之后】
 #       且没有机制回传给代理 —— 于是别的子服会看到玩家输入的「64」。
 # true  = 先等 await-cancel-timeout-millis 毫秒，子服回一句「这条被取消了」就整条不转发
-#         （跨服转发、Message.commands、Discord 转发一起都不做）
+#         （跨服转发、Message.commands 一起都不做）
 # false = 不等，收到就转发
 # ⚠️ 各子服要装配套插件 VmessageSuppress 才会发信号；没装的话每次都白等到超时才转发。
 #    可以用下面的 await-cancel-servers 把这类服排除掉 —— 它们不再等待，收到就转发。
@@ -96,7 +96,7 @@ await-cancel-signal = true
 # ★ 哪些子服参与跨服聊天
 #   名单里写 velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名），大小写都行。
 #   不参与的服：既不把聊天发给别的服，也收不到别服发来的聊天（它自己服内的聊天不受影响）。
-#   排除掉的服，Message.commands 不执行、这条也不转发到 Discord。
+#   排除掉的服，Message.commands 不执行。
 #   本服内部的聊天永远是子服自己广播的，跟这里无关。
 #
 # blacklist（默认）= 名单里的服【不】参与，其余全部参与 → 名单为空就是「全部参与」

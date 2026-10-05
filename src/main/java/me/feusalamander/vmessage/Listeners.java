@@ -15,7 +15,6 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.cacheddata.CachedMetaData;
-import ooo.foooooooooooo.velocitydiscord.VelocityDiscord;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -42,17 +41,6 @@ public final class Listeners {
     private static final Set<String> BUILTIN = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
             "player", "prefix", "suffix", "message", "server", "oldserver")));
     private static final Pattern PLACEHOLDER = Pattern.compile("#([A-Za-z0-9_\\-]+)#");
-    /**
-     * 给 Discord 剥颜色码用（&c / &#RRGGBB / &#RGB / &x&F&F&0&0&0&0 / §c 都算）。
-     *
-     * ⚠️ 单字符那一档后面加了 `(?!=)`：网址里 `?a=1&b=2` 的 `&b` 正好是合法颜色码字符，
-     *    不加这个断言会把 `&b=2` 整段吃掉，链接直接坏了。真正的颜色码后面紧跟 `=` 的情况几乎不存在。
-     */
-    private static final Pattern DISCORD_COLOR = Pattern.compile(
-            "[&§](?:#[0-9a-fA-F]{6}"
-                    + "|#[0-9a-fA-F]{3}(?![0-9a-fA-F])"
-                    + "|x(?:[&§][0-9a-fA-F]){6}"
-                    + "|[0-9a-fA-Fk-oK-OrR](?!=))");
     /** 组件解析失败只报一次，别每条消息都刷屏。 */
     private static final java.util.concurrent.atomic.AtomicBoolean warnedParse =
             new java.util.concurrent.atomic.AtomicBoolean(true);
@@ -93,7 +81,7 @@ public final class Listeners {
         final Player p = e.getPlayer();
         final Optional<ServerConnection> current = p.getCurrentServer();
         // 这个服不参与跨服聊天（或 Message.enabled 关了）：整条都不做 ——
-        // 不转发、不跑 Message.commands、不进 Discord。
+        // 不转发、也不跑 Message.commands。
         // ⚠️ 连原始聊天也不能 deny：all=true 时代理是靠自己重发来保证大家看得到的，
         //    这里 deny 了却不代发，该服玩家的聊天就被彻底吞掉了。
         if (!canSpeakHere(p)) {
@@ -117,7 +105,7 @@ public final class Listeners {
         // 先等一小会儿再转发：子服插件可能把这条聊天取消掉（商店输入数量、菜单输入、签到输入……）。
         // 子服那边会回一句「这条被取消了」；到期还没等到，就说明是正常聊天，照常转发。
         // ⚠️ 只推迟「发给别的子服」这一步 —— 玩家自己所在服的聊天是子服自己广播的，不受影响。
-        // ⚠️ 命中抑制时整条都不做：跨服转发、Message.commands、Discord 转发一律跳过。
+        // ⚠️ 命中抑制时整条都不做：跨服转发、Message.commands 一律跳过。
         // ⚠️ 登记必须在调度【之前】：记下本次等待的开始时刻，并丢掉上一轮迟到的陈旧信号
         //    （等待窗口比信号有效期短得多，超时之后才到的信号会污染下一条内容相同的聊天）。
         suppression.beginWait(p.getUniqueId(), m);
@@ -196,13 +184,10 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = FormatCleaner.finish(luckperms(message, p));
         }
-        final String discordRaw = discordRaw(message);
         if (configuration.isMinimessageEnabled()) {
             proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-			trySendDiscord(discordRaw);
         } else {
             proxyServer.sendMessage(SERIALIZER.deserialize(message));
-			trySendDiscord(discordRaw);
         }
 
     }
@@ -246,13 +231,10 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = FormatCleaner.finish(luckperms(message, p));
         }
-        final String discordRaw = discordRaw(message);
         if (configuration.isMinimessageEnabled()) {
             proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-			trySendDiscord(discordRaw);
         } else {
             proxyServer.sendMessage(SERIALIZER.deserialize(message));
-			trySendDiscord(discordRaw);
         }
 
     }
@@ -301,13 +283,10 @@ public final class Listeners {
             if (luckPermsAPI != null) {
                 message = FormatCleaner.finish(luckperms(message, p));
             }
-        final String discordRaw = discordRaw(message);
             if (configuration.isMinimessageEnabled()) {
                 proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-				 trySendDiscord(discordRaw);
             } else {
                 proxyServer.sendMessage(SERIALIZER.deserialize(message));
-				 trySendDiscord(discordRaw);
             }
         } else if (serverConnection.isPresent()){
             if (!configuration.isJoinEnabled()) {
@@ -338,13 +317,10 @@ public final class Listeners {
             if (luckPermsAPI != null) {
                 message = FormatCleaner.finish(luckperms(message, p));
             }
-        final String discordRaw = discordRaw(message);
             if (configuration.isMinimessageEnabled()) {
                 proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-				trySendDiscord(discordRaw);
             } else {
                 proxyServer.sendMessage(SERIALIZER.deserialize(message));
-				trySendDiscord(discordRaw);
             }
         }
     }
@@ -376,59 +352,11 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = FormatCleaner.finish(luckperms(message, p));
         }
-        final String discordRaw = discordRaw(message);
         if (configuration.isMinimessageEnabled()) {
             proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-            trySendDiscord(discordRaw);
         } else {
             proxyServer.sendMessage(SERIALIZER.deserialize(message));
-            trySendDiscord(discordRaw);
         }
-    }
-
-    /**
-     * Discord 要的是纯文本，颜色码得剥掉。
-     *
-     * ⚠️ 上游原本的写法是 `split("§")` 之后对每段 `substring(1)` —— 那只在字符串【以颜色码开头】
-     *    时才对得上；开头是普通文字时会把第一个字当成颜色码吃掉（"史蒂夫离开了" → "蒂夫离开了"）。
-     *    前缀为空、占位符被折叠掉之后格式就未必以 & 开头了，这个坑很容易踩到。
-     *    改成直接删颜色码，一字不动地保留正文。
-     *
-     * ⚠️ 另外上游这里还有一句 `proxyServer.sendMessage(Component.text(Arrays.toString(dump2)))` ——
-     *    那是调试残留，装了 VelocityDiscord 时每次进/出/切服都会向【全服】广播一句
-     *    `[&e, xxx离开了...]` 这样的数组文本。已删。
-     */
-    private static String discordRaw(final String message) {
-        return VMessage.isDiscord() ? stripColors(message) : message;
-    }
-
-    /**
-     * 往 Discord 转发一句（装了 discord 插件、且开关打开时才真发）。
-     *
-     * <p>⚠️ 为什么不能直接 `VelocityDiscord.getDiscord().sendMessage(...)`：
-     * 本插件自带的是【占位实现】（ooo.foooooooooooo.velocitydiscord.VelocityDiscord 恒返回 null），
-     * 而开关判的是「代理里有没有加载 id 为 discord 的插件」。Velocity 各插件 ClassLoader 隔离，
-     * Vmessage 只能看到自己这份 stub —— 一旦代理装了真实的 discord 插件，这里必然 NPE。
-     * NPE 抛在聊天/进出服的事件处理里会打断后面的逻辑（deliver 里那一处更是会让所有子服一条都收不到），
-     * 所以这里判空 + 兜住所有 Throwable：Discord 转发失效可以接受，消息转发不能跟着崩。
-     */
-    private static void trySendDiscord(final String plain) {
-        if (!VMessage.isDiscord()) {
-            return;
-        }
-        try {
-            final VelocityDiscord.Discord discord = VelocityDiscord.getDiscord();
-            if (discord != null) {
-                discord.sendMessage(plain);
-            }
-        } catch (final Throwable ignored) {
-            // 转发失败就算了，不能影响跨服聊天本身
-        }
-    }
-
-    /** 删掉颜色码（&c / &#RRGGBB / §c），正文一字不动。包内可见，便于单测。 */
-    static String stripColors(final String message) {
-        return DISCORD_COLOR.matcher(message).replaceAll("");
     }
 
     private String luckperms(String message, final Player p) {
@@ -577,13 +505,6 @@ public final class Listeners {
         final Component altComponent = altFormat.isEmpty() ? mainComponent
                 : altFormat.equals(mainFormat) ? mainComponent
                 : build(altFormat, content, mini, permission, colorMode, namedColors, gradient);
-        // ⚠️ 这一句在发服循环【之前】：真崩了的话所有子服一条都收不到，所以必须兜住
-        if (VMessage.isDiscord()) {
-            final String source = mainFormat.isEmpty() ? altFormat : mainFormat;
-            // ⚠️ #message# 在这一步才换成玩家真正说的话 —— 上面那两个组件里是换好了的，
-            //    但 Discord 要的是纯文本，只能在这里自己换一次（以前漏了这步，Discord 上全是 "#message#"）。
-            trySendDiscord(discordRaw(source.replace("#message#", content)));
-        }
         final com.velocitypowered.api.proxy.server.ServerInfo sender =
                 p.getCurrentServer().map(ServerConnection::getServerInfo).orElse(null);
         // 变量是在【发送者所在服】算的：那个服自己就在名单里时，%xxx% 一样算不出来，
