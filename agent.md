@@ -106,7 +106,16 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
 ```
 
 - 离线构建（`-o`），依赖都在 `~/.m2`。**不要**加 shade 插件，装不上。
-- ⚠️ **本仓库没有单元测试**。逻辑改动只能靠本地测试服实机验证。
+- ⚠️ **本仓库没有 src/test**（别往里加：surefire 没有 JUnit provider 会挂）。
+  但 `FormatCleaner` 是**纯 Java、不依赖 Velocity**，可以单独拿出来跑：
+  ```
+  # 测试台副本：D:\game\Server\.workbuddy\vmessage\FormatCleanerTest.java（36 条断言）
+  javac -encoding UTF-8 -d out <仓库>/src/main/java/me/feusalamander/vmessage/FormatCleaner.java FormatCleanerTest.java
+  java -cp out FormatCleanerTest
+  ```
+  ⚠️ 用 PowerShell 跑，别用 Git Bash（会把 `-cp` 里的 `D:/...` 做路径转换 → 找不到主类）。
+  断言比的是「剥掉颜色码之后玩家看到的文本」，不是原始串 —— 多余空格是视觉问题，`&r` 会干扰比对。
+- 其它类的逻辑改动只能靠本地测试服实机验证。
 
 本地测试服：`D:\game\test_velocity`（velocity 25565 + server1/2 25566/25567）。
 验证标志：代理日志出现 `[vmessage] PAPIProxyBridge 状态：已连接`。
