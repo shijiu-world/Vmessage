@@ -11,7 +11,8 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 - 源码：`D:\Code\mc\plugins\Vmessage`
 - 仓库：`git@github.com:shijiu-world/Vmessage.git`（**走 SSH**，https 会被本机代理掐断 502）
 - 上游：`FeuSalamander/Vmessage` 1.6.2，本 fork 修了 Velocity 4.x 崩溃并加了生产必需的功能
-- 产物：`target/Vmessage-1.6.2-velocity4fix-multimeta.jar`（class 61，Velocity 3.4 ~ 4.x 通用）
+- 产物：`target/Vmessage-<版本>.jar`（class 61，Velocity 3.4 ~ 4.x 通用）。版本号**只写在 `pom.xml`**
+  （`velocity-plugin.json` 里是 `${project.version}`，Maven 过滤自动填），升版改一处即可。
 - 已编译产物副本：`D:\game\Server\.workbuddy\vmessage\`
 
 ---
