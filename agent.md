@@ -26,7 +26,7 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 | `Listeners.java` | 597 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑 | 动这里等于动整个插件行为，必看下面「数据流」 |
 | `Configuration.java` | 563 | 全部配置项读取。用 `com.moandjiezana.toml.Toml`（tomlj）解析 | 加配置要同时改 `config.toml` 默认值 + README 表格 |
 | `ChatColors.java` | 278 | 颜色归一化：CMI 全系语法（`&x&F&F...`、3位hex、`{#F00}`、命名色、渐变） | 渐变是「抠哨兵 → 逐字染色 → 插回」 |
-| `FormatCleaner.java` | 103 | 清理空包裹符（`[&6%guild%&r]` 取不到值时连括号删掉） | ⚠️ 靠哨兵机制，**不能折叠连续空格**（称号值里有空格） |
+| `FormatCleaner.java` | ~200 | 清理空段：`[&6%guild%&r]` 取不到值时连括号删掉；**PAPI 变量解析成功但值为空**时也要删（靠 mark/resolveMarks 记边界） | ⚠️ 靠哨兵机制，**不能折叠连续空格**（称号值里有空格）；只删紧贴哨兵**左侧**的颜色码 |
 | `Linkify.java` | 96 | 网址 → 可点击 `[链接]` | 正则用 RFC3986 字符集，**不是** `https?://\S+`（中文无空格会吃整句） |
 | `Suppression.java` | 106 | 收子服「这条聊天被取消了」信号，命中则整条丢弃 | 通道 `vmessage:suppress`，配套 `VmessageSuppress` 插件 |
 | `PapiBridge.java` | 136 | 反射调 PAPIProxyBridge 解析 `%xxx%`，带缓存 | 反射是刻意的——桥接是可选依赖，不能编译期硬引 |
@@ -51,9 +51,9 @@ PlayerChatEvent (Listeners.onMessage)
   ↓    等 → 挂一个延迟任务（默认 100ms），到期问 Suppression：这条被取消了？是 → 整条丢弃
   ↓    不等（没装 VmessageSuppress 的服）→ 跳过延迟，立即往下走
   ↓ ④ 拼格式：#player#/#prefix#/#suffix#/#server# 内建位 → #xxx# 当 LuckPerms meta 键查
-  ↓            → %xxx% 走 PapiBridge 向「发送者所在子服」现算
+  ↓            → FormatCleaner.mark() 给 %xxx% 套边界标记 → %xxx% 走 PapiBridge 向「发送者所在子服」现算
   ↓ ⑤ ChatColors 按 message-colors（strip/parse/keep）+ vmessage.color 权限处理消息内容
-  ↓ ⑥ FormatCleaner 清空包裹符 → Linkify 做网址
+  ↓ ⑥ FormatCleaner.finish()：resolveMarks（空值→哨兵）→ stripUnresolved（空括号→哨兵）→ collapse（收空格）→ Linkify 做网址
   ↓ ⑦ 发给「除发送者所在服以外」且通过名单的其它子服
   ↓ ⑧ 跑 [Message].commands、转发 Discord（装了才走）
 ```
@@ -72,7 +72,11 @@ PlayerChatEvent (Listeners.onMessage)
 6. `#xxx#` 取不到值时抹成空串，**不能把 `#title#` 字面量显示给玩家**。
 7. 剥颜色的正则里 `[0-9a-fA-Fk-oK-OrR]` 后面必须跟 `(?!=)`——否则 `?a=1&b=2` 会被吃成 `?a=1=2`，链接直接坏。
 8. 提交前确认源文件是 **LF**（Windows 编辑器容易写成 CRLF）。⚠️ 本仓库**没有** `.gitattributes`，靠手动注意。
-9. **包名 `me.feusalamander.vmessage` 是上游命名空间，不是作者，别改**。改了要动 14 个文件 +
+9. 🔴 **`%xxx%` 变量「解析成功但值是空串」时，只有 mark/resolveMarks 的边界标记能识别出来**
+   —— 光看解析结果里有没有 `%xxx%` 字面量判断不了。改 `FormatCleaner` 时别把标记步骤绕过去，
+   也别图省事改成「折叠连续空格」（称号值里有空格，会坏）。
+   收空格的三条边界：紧贴哨兵**左侧**的颜色码要一起删；**右侧**的属于下一段，必须留。
+10. **包名 `me.feusalamander.vmessage` 是上游命名空间，不是作者，别改**。改了要动 14 个文件 +
    `velocity-plugin.json` 的 `main`，纯属自找麻烦。作者字段只有三处：
    `velocity-plugin.json` 的 `authors`、`VMessage.java` 的 `@Plugin(authors=...)`、起服日志那句
    `Vmessage by xxx is working !`。三处已统一为「拾玖世界」。

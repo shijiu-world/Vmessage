@@ -491,7 +491,10 @@ public final class Listeners {
         // 这一步在 #message# 替换【之前】做 —— 玩家输入的聊天内容不会被当成占位符解析。
         final PapiBridge papi = VMessage.papi();
         if (papi != null && configuration.isPapiEnabled() && main.indexOf('%') >= 0) {
-            papi.format(main, p.getUniqueId()).thenAccept(resolved ->
+            // ⚠️ 先给 %xxx% 套边界标记再送去过桥接：变量【解析成功但值是空串】时，
+            //    字符串里已经没有 %xxx% 了，只有标记还能指出"这一段是个变量、现在空了"，
+            //    finish() 才能把它两侧多余的空格收掉（否则 [生存]  [无公会] 两个空格）。
+            papi.format(FormatCleaner.mark(main), p.getUniqueId()).thenAccept(resolved ->
                     // PAPI 返回的是 § 码，而 Vmessage 用 & 序列化
                     deliver(p, FormatCleaner.finish(resolved.replace('§', '&')),
                             FormatCleaner.finish(alt), m, permission));
