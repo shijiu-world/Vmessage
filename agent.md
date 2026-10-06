@@ -68,8 +68,16 @@ PlayerChatEvent (Listeners.onMessage)
   ↓ ① 总闸 [Broadcast].enabled —— false 就整条不处理（各档 commands 也不跑）
   ↓ ② 该档自己的 enabled（Join.enabled 等）+ vmessage.silent.* 权限
   ↓ ③ 跑该档 commands
-  ↓ ④ Listeners.broadcast()：格式串解析成组件 → 挂 [Tooltip]（{player}=广播主角）→ proxyServer.sendMessage
+  ↓ ④ Listeners.broadcast()：格式串解析成组件 → 挂 [Tooltip] 的 **hover 档**（不挂点击）→ proxyServer.sendMessage
 ```
+
+**悬停/点击的三档**（adventure 规则：子节点自己设过事件就**不继承**父的）：
+
+| 位置 | 悬停 | 点击 | 挂载点 |
+|---|---|---|---|
+| 聊天整条（= 前缀+名字那一段） | `Tooltip.hover` 发送时间 | `Tooltip.suggest` 填命令 | `ChatTooltip.apply()` ← `deliver()` |
+| 聊天正文 `#message#` | `Tooltip.copy-hover` | 复制到剪贴板 | `ChatTooltip.copy()` ← `build()` |
+| 五档广播 | `Tooltip.hover` | **无** | `ChatTooltip.applyHover()` ← `broadcast()` |
 
 ---
 
@@ -95,7 +103,12 @@ PlayerChatEvent (Listeners.onMessage)
 11. 🔴 **校验产物别只看本地 `target/classes`**：`velocity-api` 自带注解处理器会在 compile 阶段
     按 `@Plugin` 重新生成 `velocity-plugin.json`，把 resources 里过滤好的那份盖掉
     （详见文末「已修复」一节）。务必 `jar xf` 出 **Actions 构建的那份产物**再验版本号。
-12. 📌 **五档广播只从 `Listeners.broadcast()` 出去**（别在事件里直接 `proxyServer.sendMessage`）——
+12. 🔴 **adventure 里「子节点自己设过的事件优先，继承只发生在自己没设时」** ——
+    想让某一截**不**继承父组件的悬停/点击，就得给它**显式**设上（提示留空也要 `showText(Component.empty())`，
+    光是不设就会把父的继承过来）。正文的「复制」档正是靠这个把「发送时间 / 填 /msg」挡在外面。
+    复制用的纯文本要用自写的 `ChatTooltip.plain()`（`PlainComponentSerializer` 不在 Velocity 4.x 里），
+    且必须在网址被 Linkify 换成「[链接]」**之前**取。
+13. 📌 **五档广播只从 `Listeners.broadcast()` 出去**（别在事件里直接 `proxyServer.sendMessage`）——
     总闸 `[Broadcast].enabled` 和悬停/点击都挂在这一层，绕过去就会漏。
 13. 📌 **升版本号只改 `pom.xml` 一处**：`@Plugin(version = BuildConstants.VERSION)`，
     `BuildConstants` 由 `src/main/java-templates/` 生成。**别把字面量写回注解里**。
@@ -109,7 +122,7 @@ PlayerChatEvent (Listeners.onMessage)
 | 加一个配置项 | `Configuration.java` + `src/main/resources/config.toml` | README 的配置表格、起服日志里的 `reportConfig` |
 | 加一个占位符 | `Listeners.java` 的 `BUILTIN` 集合 + 替换逻辑 | 内建名不能当 meta 键查 |
 | 消息格式相关 | `Listeners.java` 的 `message()` | 只此一路，改格式串只影响游戏内显示 |
-| 悬停提示 / 点击填命令 | `ChatTooltip.java`；两个挂载点：`Listeners.deliver()`（转发到别的子服的聊天）和 `Listeners.broadcast()`（五档广播） | 聊天那路：`all=true` 时发给发送者自己所在服的那份刻意不挂（不然点一下是给自己发消息）。广播那路：`{player}` 是广播主角，`Disconnect` 没有 `{server}` |
+| 悬停提示 / 点击填命令 | `ChatTooltip.java`；三个挂载点：`Listeners.deliver()`（整条聊天）、`Listeners.build()` 里的正文 `#message#`、`Listeners.broadcast()`（五档广播） | 🔴 **子节点自己设过事件就不继承父的**：正文挂了复制档，所以不再继承整条的「时间 + /msg」；正文里的 [链接] 又盖过正文。广播只走 `applyHover`（不挂点击） |
 | 颜色/渐变语法 | `ChatColors.java` | VWhisper 有一份**同源但独立**的 `ChatColors`，改语法两边都要改 |
 | 网址识别 | `Linkify.java` 的 `pattern` | 默认值在 `config.toml` 的 `[Link]` |
 | 子服参与名单 | `Configuration.buildNoPapiServers` / `isChatServerAllowed` | 白名单配成空 = 全服断流，要打 WARN |

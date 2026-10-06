@@ -364,7 +364,9 @@ public final class Listeners {
         final boolean mini = configuration.isMinimessageEnabled();
         // MiniMessage 模式下 § 会破坏解析，先抠掉；& 模式保持原样（跟上游一致）
         final Component component = parseQuietly(mini ? message.replace("§", "") : message, mini);
-        proxyServer.sendMessage(ChatTooltip.apply(component, configuration, p.getUsername(), serverLabel));
+        // ⚠️ 广播只挂悬停，不挂点击：点一下填 /msg 对「XX 加入了服务器」没有意义
+        proxyServer.sendMessage(
+                ChatTooltip.applyHover(component, configuration, p.getUsername(), serverLabel));
     }
 
     private String luckperms(String message, final Player p) {
@@ -562,8 +564,13 @@ public final class Listeners {
         Component body = mini && permission
                 ? parseQuietly(content.replace("§", ""), true)
                 : messageComponent(colorMode, content, namedColors, gradient);
+        // ⚠️ 复制用的纯文本要在网址被换成「[链接]」之前取，否则粘到剪贴板里的是「[链接]」三个字
+        final String copyText = ChatTooltip.plain(body);
         // 网址做成 [链接]（可点击、悬停看完整网址）
         body = Linkify.apply(body, configuration);
+        // 正文单独挂「悬停提示 + 点一下复制」：它自己设过事件就不会继承整条消息的
+        // 「悬停看发送时间 / 点击填 /msg」—— 前缀和名字那一段仍然保留那两个效果。
+        body = ChatTooltip.copy(body, configuration, copyText);
         final Component parsed = parseQuietly(message.replace("§", ""), mini);
         return parsed.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder()
                 .matchLiteral("#message#")

@@ -157,6 +157,11 @@ public class VMessage {
                 + "；点击填入聊天框：" + (suggest.isEmpty() ? "不响应" : "「" + suggest + "」")
                 + "；时间格式 " + configuration.getTooltipTimeFormat()
                 + "（时区 " + configuration.getTooltipZone() + "）");
+        if (configuration.isTooltipCopyEnabled()) {
+            final String copyHover = safeTrim(configuration.getTooltipCopyHover());
+            logger.info("[vmessage] 聊天正文（玩家说的话）：悬停" + (copyHover.isEmpty() ? "不显示提示" : "「" + copyHover + "」")
+                    + "，点一下复制到剪贴板（广播不带点击）");
+        }
     }
 
     private static String safeTrim(final String s) {

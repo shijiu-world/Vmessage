@@ -122,6 +122,10 @@ public final class Configuration {
     private volatile DateTimeFormatter tooltipTimeFormat = ChatTooltip.FALLBACK_TIME;
     /** {time} 用的时区；留空 = 服务器系统时区。 */
     private volatile ZoneId tooltipZone = ZoneId.systemDefault();
+    /** 正文（#message# 那一截）的「悬停提示 + 点一下复制到剪贴板」要不要挂。 */
+    private volatile boolean tooltipCopy = true;
+    /** 正文上悬停显示的提示；留空 = 只不显示提示，点击照样复制。 */
+    private volatile String tooltipCopyHover = ChatTooltip.DEFAULT_COPY_HOVER;
     /**
      * ★ Join / Leave / Kick / Disconnect / Server-change 五类广播的总闸。
      * false = 一条都不发（连各段自己的 commands 也不跑），等于把广播整体关掉；true = 交给各段的 enabled 决定。
@@ -253,6 +257,13 @@ public final class Configuration {
         final ZoneId newTooltipZone = ChatTooltip.parseZone(
                 trimToNull(config.getString("Tooltip.time-zone", "")));
 
+        // ---- 正文（#message#）的「点一下复制」 ----
+        // ⚠️ 同样是 Boolean：toml4j 缺键返回 null，直接拆箱会 NPE
+        final Boolean copyRaw = config.getBoolean("Tooltip.copy", Boolean.TRUE);
+        final boolean newTooltipCopy = copyRaw == null || copyRaw;
+        final String newTooltipCopyHover = strOrEmpty(
+                config.getString("Tooltip.copy-hover", ChatTooltip.DEFAULT_COPY_HOVER));
+
         // ---- 广播（Join / Leave / Kick / Disconnect / Server-change）的总闸 ----
         // ⚠️ 问号表达式在这里不顶用：toml4j 对缺失的键返回 null，Boolean 拆箱会 NPE。
         final Boolean broadcastRaw = config.getBoolean("Broadcast.enabled", Boolean.TRUE);
@@ -324,6 +335,8 @@ public final class Configuration {
         tooltipSuggest = newTooltipSuggest;
         tooltipTimeFormat = newTooltipTimeFormat;
         tooltipZone = newTooltipZone;
+        tooltipCopy = newTooltipCopy;
+        tooltipCopyHover = newTooltipCopyHover;
         broadcastEnabled = newBroadcastEnabled;
 
         customMeta = newCustomMeta;
@@ -697,6 +710,15 @@ public final class Configuration {
     /** {time} 用的时区（永不 null，留空或写错时是服务器系统时区）。 */
     public ZoneId getTooltipZone() {
         return this.tooltipZone == null ? ZoneId.systemDefault() : this.tooltipZone;
+    }
+
+    /** 正文（#message#）要不要挂「悬停提示 + 点一下复制到剪贴板」。 */
+    public boolean isTooltipCopyEnabled() {
+        return this.tooltipCopy;
+    }
+    /** 正文上悬停显示的提示（默认 &7复制该文本）；留空 = 不显示提示，点击照样复制。 */
+    public String getTooltipCopyHover() {
+        return this.tooltipCopyHover;
     }
 
     /**

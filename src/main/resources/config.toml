@@ -121,12 +121,16 @@ await-cancel-timeout-millis = 100
 await-cancel-server-mode = "blacklist"
 await-cancel-servers = []
 
-# ★ 悬停 / 点击：玩家把鼠标放到这条消息上时显示发送时间；点一下把命令填进自己的聊天框
-# 转发到别的子服的聊天**和** Join/Leave/Kick 那些广播都走这套（两处用同一个 hover / suggest）
+# ★ 悬停 / 点击：鼠标放到消息上时显示提示；点一下有动作
+#
+# 转发的聊天分两段，效果不一样：
+#   前缀 + 名字（#message# 以外的部分）  → 悬停显示 hover（发送时间），点一下把 suggest 填进聊天框
+#   正文（玩家真正说的那句话，#message#）→ 悬停显示 copy-hover，点一下把这句话复制到剪贴板
+# Join/Leave/Kick 那些广播 → 只显示 hover，**不做点击**（广播没有「给谁发消息」的含义）
 #
 # hover / suggest 里可以写：
 #   {time}   发送时刻，格式见下面的 time-format
-#   {player} 发送者名字
+#   {player} 发送者名字（广播里就是那条广播的主角）
 #   {server} 发送者所在子服（走 [Aliases] 别名，例如「净土」）
 #
 # hover 留空 = 不显示提示；suggest 留空 = 点了没反应
@@ -135,6 +139,12 @@ enabled = true
 hover = "&e发送时间: &6{time}"
 # suggest 末尾留一个空格，玩家点完接着就能输入内容
 suggest = "/msg {player} "
+
+# ★ 正文（玩家说的那句话）上的悬停提示 + 点一下复制到剪贴板
+#   copy = false     整个关掉：正文恢复成跟前后一样（悬停看发送时间、点一下填 /msg）
+#   copy-hover = ""  只不显示提示，点击照样复制
+copy = true
+copy-hover = "&7复制该文本"
 
 # {time} 的时间格式（Java 写法）
 #   HH:mm:ss              16:38:25
