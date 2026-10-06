@@ -203,6 +203,6 @@ killer = "杀手"
 # 解析网址
 [Link]
 enabled = true
-text = "&9[链接]"
+text = "&4[&7链接&4]"
 hover = "&7点击打开：&f{url}"
 pattern = "https?://[A-Za-z0-9\\-._~:/?#\\[\\]@!$&'()*+,;=%]+"

@@ -77,10 +77,14 @@ PlayerChatEvent (Listeners.onMessage)
    —— 光看解析结果里有没有 `%xxx%` 字面量判断不了。改 `FormatCleaner` 时别把标记步骤绕过去，
    也别图省事改成「折叠连续空格」（称号值里有空格，会坏）。
    收空格的三条边界：紧贴哨兵**左侧**的颜色码要一起删；**右侧**的属于下一段，必须留。
-10. **包名 `me.feusalamander.vmessage` 是上游命名空间，不是作者，别改**。改了要动 14 个文件 +
+10. **包名 `me.feusalamander.vmessage` 是上游命名空间，不是作者，别改**。改了要动 15 个文件 +
    `velocity-plugin.json` 的 `main`，纯属自找麻烦。作者字段只有三处：
    `velocity-plugin.json` 的 `authors`、`VMessage.java` 的 `@Plugin(authors=...)`、起服日志那句
    `Vmessage by xxx is working !`。三处已统一为「拾玖世界」。
+   ⚠️ `@Plugin` 注解里的 `version = "1.6.1"` 和英文 description 是**上游旧值**。
+11. 🔴 **校验产物别只看本地 `target/classes`**：`velocity-api` 自带注解处理器会在 compile 阶段
+    按 `@Plugin` 重新生成 `velocity-plugin.json`（详见文末「已知问题」）——
+    本地能跑出对的版本号，Actions 编的那份却是 `1.6.1`。务必 `jar xf` 出 **Actions 那份产物**再验。
    ⚠️ `@Plugin` 注解里的 `version = "1.6.1"` 和英文 description 是**上游旧值**，跟实际 1.6.2 不符；
    真正生效的是 `velocity-plugin.json` 那份（Maven 会过滤掉 `${project.version}`）。
 
@@ -155,7 +159,30 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
 
 ---
 
+## 🔴 已知问题：jar 里 `velocity-plugin.json` 的版本号不是当前版本（CI 环境）
+
+现象：`Vmessage-1.9.0.jar`（**Actions 编的那份**）里 `velocity-plugin.json` 的 `version` 是 **`1.6.1`**，
+而**本地 `mvn package` 编出来的那份是对的（`1.9.0`）**。`/velocity plugins` 显示的就是前者。
+
+原因：`velocity-api` 自带注解处理器 `com.velocitypowered.api.plugin.ap.PluginAnnotationProcessor`，
+它在 **compile 阶段**（在 resources 之后）按 `@Plugin` 注解**重新生成** `velocity-plugin.json`，
+把 resources 过滤出来的那份覆盖掉。而 `VMessage.java` 的 `@Plugin(version = "1.6.1")` 是上游旧值。
+本地 sometimes 不复现（增量编译没跑处理器），所以只在 CI 的 `clean package` 上稳定出现。
+
+候选修法（**都还没做**）：
+
+1. **推荐**：`maven-compiler-plugin` 配 `<proc>none</proc>` 禁掉注解处理器 ——
+   只保留 `src/main/resources/velocity-plugin.json`（`${project.version}` 会被过滤），
+   版本号真源仍然只有 pom 一处。
+2. 退而求其次：把 `@Plugin(version=...)` 也改成当前版本 —— 但多了第四处版本号真源，每次发版都要同步。
+
+排查手法：`jar xf <产物>.jar velocity-plugin.json && cat velocity-plugin.json`，
+别只看本地 `target/classes`（本地那份可能没被处理器覆盖）。
+
 ## 排查速查
+
+| 现象 | 看什么 |
+|---|---|
 
 | 现象 | 看什么 |
 |---|---|
