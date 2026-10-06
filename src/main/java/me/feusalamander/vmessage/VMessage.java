@@ -20,7 +20,9 @@ import java.util.concurrent.TimeUnit;
 @Plugin(
         id = "vmessage",
         name = "Vmessage",
-        version = "1.6.1",
+        // ⚠️ 版本号必须是编译期常量，没法直接写 ${project.version} —— 走 BuildConstants 间接引过来，
+        //    这样 pom.xml 是唯一真源。改版本只改 pom，别再手改这里。
+        version = BuildConstants.VERSION,
         description = "A velocity plugin that creates a multi server chat for the network",
         authors = {"拾玖世界"},
         dependencies = {

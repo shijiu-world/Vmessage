@@ -11,20 +11,22 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 - 源码：`D:\Code\mc\plugins\Vmessage`
 - 仓库：`git@github.com:shijiu-world/Vmessage.git`（**走 SSH**，https 会被本机代理掐断 502）
 - 上游：`FeuSalamander/Vmessage` 1.6.2，本 fork 修了 Velocity 4.x 崩溃并加了生产必需的功能
-- 产物：`target/Vmessage-<版本>.jar`（class 61，Velocity 3.4 ~ 4.x 通用）。版本号**只写在 `pom.xml`**
-  （`velocity-plugin.json` 里是 `${project.version}`，Maven 过滤自动填），升版改一处即可。
+- 产物：`target/Vmessage-<版本>.jar`（class 61，Velocity 3.4 ~ 4.x 通用）。**版本号真源只有 `pom.xml` 一处**：
+  pom → `src/main/java-templates/.../BuildConstants.java`（templating 插件生成）→ `@Plugin(version=...)`
+  → 注解处理器重写的 `velocity-plugin.json`。升版改 pom 即可，`@Plugin` 里别写字面量。
 - 已编译产物副本：`D:\game\Server\.workbuddy\vmessage\`
 
 ---
 
 ## 源码地图
 
-包 `me.feusalamander.vmessage`，共 15 个类。
+包 `me.feusalamander.vmessage`，共 15 个源文件（其中 1 个是构建时生成的）。
 
 | 文件 | 行 | 职责 | 动它之前先想清楚 |
 |---|---|---|---|
 | `ChatTooltip.java` | ~150 | **新增**：给转发的聊天挂悬停提示（发送时间）+ 点击填命令（`/msg`） | 事件挂在**根组件**上往下继承；消息里的 [链接] 有自己的 openUrl/hover，优先级更高不会被抢 |
-| `VMessage.java` | 260 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
+| `BuildConstants.java`（⚠️在 `src/main/java-templates/`，**构建时生成**，别手改） | 21 | 唯一一个常量：`VERSION`，等于 pom 的 `<version>` | `@Plugin` 要编译期常量，没法写 `${project.version}`；以前硬编码导致产物里的版本号永远是旧值 |
+| `VMessage.java` | 262 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
 | `Listeners.java` | 582 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑 | 动这里等于动整个插件行为，必看下面「数据流」 |
 | `Configuration.java` | 705 | 全部配置项读取。用 `com.moandjiezana.toml.Toml`（tomlj）解析 | 加配置要同时改 `config.toml` 默认值 + README 表格 |
 | `ChatColors.java` | 278 | 颜色归一化：CMI 全系语法（`&x&F&F...`、3位hex、`{#F00}`、命名色、渐变） | 渐变是「抠哨兵 → 逐字染色 → 插回」 |
@@ -80,13 +82,13 @@ PlayerChatEvent (Listeners.onMessage)
 10. **包名 `me.feusalamander.vmessage` 是上游命名空间，不是作者，别改**。改了要动 15 个文件 +
    `velocity-plugin.json` 的 `main`，纯属自找麻烦。作者字段只有三处：
    `velocity-plugin.json` 的 `authors`、`VMessage.java` 的 `@Plugin(authors=...)`、起服日志那句
-   `Vmessage by xxx is working !`。三处已统一为「拾玖世界」。
-   ⚠️ `@Plugin` 注解里的 `version = "1.6.1"` 和英文 description 是**上游旧值**。
+    `Vmessage by xxx is working !`。三处已统一为「拾玖世界」。
+    ⚠️ `@Plugin` 的英文 `description` 是**上游旧文案**（照 1.6.2 写），不影响运行，改它纯属洁癖。
 11. 🔴 **校验产物别只看本地 `target/classes`**：`velocity-api` 自带注解处理器会在 compile 阶段
-    按 `@Plugin` 重新生成 `velocity-plugin.json`（详见文末「已知问题」）——
-    本地能跑出对的版本号，Actions 编的那份却是 `1.6.1`。务必 `jar xf` 出 **Actions 那份产物**再验。
-   ⚠️ `@Plugin` 注解里的 `version = "1.6.1"` 和英文 description 是**上游旧值**，跟实际 1.6.2 不符；
-   真正生效的是 `velocity-plugin.json` 那份（Maven 会过滤掉 `${project.version}`）。
+    按 `@Plugin` 重新生成 `velocity-plugin.json`，把 resources 里过滤好的那份盖掉
+    （详见文末「已修复」一节）。务必 `jar xf` 出 **Actions 构建的那份产物**再验版本号。
+12. 📌 **升版本号只改 `pom.xml` 一处**：`@Plugin(version = BuildConstants.VERSION)`，
+    `BuildConstants` 由 `src/main/java-templates/` 生成。**别把字面量写回注解里**。
 
 ---
 
@@ -159,25 +161,27 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
 
 ---
 
-## 🔴 已知问题：jar 里 `velocity-plugin.json` 的版本号不是当前版本（CI 环境）
+## ✅ 已修复（v1.9.1）：产物里 `velocity-plugin.json` 的版本号不是当前版本
 
-现象：`Vmessage-1.9.0.jar`（**Actions 编的那份**）里 `velocity-plugin.json` 的 `version` 是 **`1.6.1`**，
-而**本地 `mvn package` 编出来的那份是对的（`1.9.0`）**。`/velocity plugins` 显示的就是前者。
+旧现象：`Vmessage-1.9.0.jar`（**Actions 编的那份**）里 `velocity-plugin.json` 的 `version` 是 **`1.6.1`**，
+而本地 `mvn package` 编出来的那份偏偏是对的。`/velocity plugins` 显示的是产物里的值，于是看起来一直没升级。
 
 原因：`velocity-api` 自带注解处理器 `com.velocitypowered.api.plugin.ap.PluginAnnotationProcessor`，
-它在 **compile 阶段**（在 resources 之后）按 `@Plugin` 注解**重新生成** `velocity-plugin.json`，
-把 resources 过滤出来的那份覆盖掉。而 `VMessage.java` 的 `@Plugin(version = "1.6.1")` 是上游旧值。
-本地 sometimes 不复现（增量编译没跑处理器），所以只在 CI 的 `clean package` 上稳定出现。
+它在 **compile 阶段**（resources 之后）按 `@Plugin` 注解**重新生成** `velocity-plugin.json`，
+把 `src/main/resources` 里过滤好的那份覆盖掉 —— 所以「resources 里写了 `${project.version}`」在 CI 的
+`clean package` 上根本不算数。而 `@Plugin(version = "1.6.1")` 是上游遗留的字面量，从来没同步过。
+本地因为**增量编译不跑处理器**，常常不复现，这就是为什么只验证本地会漏。
 
-候选修法（**都还没做**）：
+修法（已做，选了最省心的那条）：`templating-maven-plugin` 从
+`src/main/java-templates/me/feusalamander/vmessage/BuildConstants.java` 生成一个只有 `VERSION` 常量的类，
+`@Plugin(version = BuildConstants.VERSION)` 引它 —— 编译期常量成立，pom 仍是唯一真源。
 
-1. **推荐**：`maven-compiler-plugin` 配 `<proc>none</proc>` 禁掉注解处理器 ——
-   只保留 `src/main/resources/velocity-plugin.json`（`${project.version}` 会被过滤），
-   版本号真源仍然只有 pom 一处。
-2. 退而求其次：把 `@Plugin(version=...)` 也改成当前版本 —— 但多了第四处版本号真源，每次发版都要同步。
+> 另两条备选（没采用，记着以防 BuildConstants 哪天不好使）：
+> ① `<proc>none</proc>` 禁掉注解处理器，让 resources 那份说了算；② 手工同步 `@Plugin` 的串（多一处真源，不推荐）。
 
-排查手法：`jar xf <产物>.jar velocity-plugin.json && cat velocity-plugin.json`，
-别只看本地 `target/classes`（本地那份可能没被处理器覆盖）。
+📌 **校验产物别只看本地 `target/classes`**（可能没被处理器覆盖过），务必：
+`jar xf <产物>.jar velocity-plugin.json && grep version velocity-plugin.json`，
+而且要用 **Actions 构建出来的那份**（`gh release download` / `gh run download`）验，别拿本地 `target/` 当证据。
 
 ## 排查速查
 

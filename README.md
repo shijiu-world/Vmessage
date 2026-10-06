@@ -367,7 +367,9 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 
 上游仓库 clone 下来**编译不过**（缺类）且打出的 jar **缺 `velocity-plugin.json`**（Velocity 不认）。补上了：
 
-- `src/main/resources/velocity-plugin.json` —— 插件描述，版本由 Maven 过滤自动填入
+- `src/main/resources/velocity-plugin.json` —— 插件描述。`version` 写的是 `${project.version}`，
+  构建时被 Maven 过滤成真版本号；不过真正生效的是 compile 阶段由 `@Plugin` 注解生成的那份（会覆盖它），
+  所以**升版本只用改 `pom.xml`**（`@Plugin(version=)` 引的是自动生成的 `BuildConstants.VERSION`）
 - `src/main/java/ooo/foooooooooooo/velocitydiscord/VelocityDiscord.java` —— 仅用于通过编译的 stub
   （**已随 Discord 转发功能一并删除**，见第 14 条）
 - `pom.xml`：`java.version` 11 → 17
