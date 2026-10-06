@@ -19,11 +19,12 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 
 ## 源码地图
 
-包 `me.feusalamander.vmessage`，共 14 个类。
+包 `me.feusalamander.vmessage`，共 15 个类。
 
 | 文件 | 行 | 职责 | 动它之前先想清楚 |
 |---|---|---|---|
-| `VMessage.java` | 244 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
+| `ChatTooltip.java` | ~150 | **新增**：给转发的聊天挂悬停提示（发送时间）+ 点击填命令（`/msg`） | 事件挂在**根组件**上往下继承；消息里的 [链接] 有自己的 openUrl/hover，优先级更高不会被抢 |
+| `VMessage.java` | 260 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
 | `Listeners.java` | 582 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑 | 动这里等于动整个插件行为，必看下面「数据流」 |
 | `Configuration.java` | 705 | 全部配置项读取。用 `com.moandjiezana.toml.Toml`（tomlj）解析 | 加配置要同时改 `config.toml` 默认值 + README 表格 |
 | `ChatColors.java` | 278 | 颜色归一化：CMI 全系语法（`&x&F&F...`、3位hex、`{#F00}`、命名色、渐变） | 渐变是「抠哨兵 → 逐字染色 → 插回」 |
@@ -54,7 +55,7 @@ PlayerChatEvent (Listeners.onMessage)
   ↓            → FormatCleaner.mark() 给 %xxx% 套边界标记 → %xxx% 走 PapiBridge 向「发送者所在子服」现算
   ↓ ⑤ ChatColors 按 message-colors（strip/parse/keep）+ vmessage.color 权限处理消息内容
   ↓ ⑥ FormatCleaner.finish()：resolveMarks（空值→哨兵）→ stripUnresolved（空括号→哨兵）→ collapse（收空格）→ Linkify 做网址
-  ↓ ⑦ 发给「除发送者所在服以外」且通过名单的其它子服
+  ↓ ⑦ 发给「除发送者所在服以外」且通过名单的其它子服（这一步才挂上 [Tooltip] 的悬停/点击）
   ↓ ⑧ 跑 [Message].commands
 ```
 
@@ -92,6 +93,7 @@ PlayerChatEvent (Listeners.onMessage)
 | 加一个配置项 | `Configuration.java` + `src/main/resources/config.toml` | README 的配置表格、起服日志里的 `reportConfig` |
 | 加一个占位符 | `Listeners.java` 的 `BUILTIN` 集合 + 替换逻辑 | 内建名不能当 meta 键查 |
 | 消息格式相关 | `Listeners.java` 的 `message()` | 只此一路，改格式串只影响游戏内显示 |
+| 悬停提示 / 点击填命令 | `ChatTooltip.java`；挂载点在 `Listeners.deliver()` 的 `server.sendMessage` 那一行 | 只对聊天生效。`all=true` 时发给发送者自己所在服的那份刻意不挂（不然点一下是给自己发消息） |
 | 颜色/渐变语法 | `ChatColors.java` | VWhisper 有一份**同源但独立**的 `ChatColors`，改语法两边都要改 |
 | 网址识别 | `Linkify.java` 的 `pattern` | 默认值在 `config.toml` 的 `[Link]` |
 | 子服参与名单 | `Configuration.buildNoPapiServers` / `isChatServerAllowed` | 白名单配成空 = 全服断流，要打 WARN |
@@ -115,6 +117,20 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
   ```
   ⚠️ 用 PowerShell 跑，别用 Git Bash（会把 `-cp` 里的 `D:/...` 做路径转换 → 找不到主类）。
   断言比的是「剥掉颜色码之后玩家看到的文本」，不是原始串 —— 多余空格是视觉问题，`&r` 会干扰比对。
+- `ChatTooltip` 也有一份独立的测试台：`D:\game\Server\.workbuddy\vmessage\TooltipTest.java`（29 条断言）。
+  它要 adventure + toml4j + gson 才能跑（**不能**只给 target/classes）：
+  ```
+  # classpath：仓库 target/classes + ~/.m2 里的 velocity-api、adventure-{api,key,
+  #   text-serializer-legacy,text-serializer-minimessage,text-serializer-gson,
+  #   text-serializer-commons}、examination-{api,string}、toml4j、gson、slf4j-api
+  javac -encoding UTF-8 -cp "<上面那一串>" -d out TooltipTest.java
+  java -cp "<上面那一串>;out" me.feusalamander.vmessage.TooltipTest
+  ```
+  ⚠️ 测试类必须放在 `me.feusalamander.vmessage` 包里（`apply`/`enabled`/`Configuration.load` 都是包级可见）。
+  ⚠️ PowerShell 工具不回显 stdout，把输出重定向到日志文件再读，别指望控制台。
+  📌 挑「时间格式写错」的用例时注意：`time-format = "yyyy-MM-dd ["` **是合法的**
+  （末尾可选段没闭合 Java 也认，`QQQ` 也合法会输出「4季度」），别拿它们当非法用例；
+  真正会被 `DateTimeFormatter.ofPattern` 拒的是未知格式字母，例如 `JJ`、`PPPP`。
 - 其它类的逻辑改动只能靠本地测试服实机验证。
 
 本地测试服：`D:\game\test_velocity`（velocity 25565 + server1/2 25566/25567）。

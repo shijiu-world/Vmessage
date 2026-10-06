@@ -123,6 +123,7 @@ public class VMessage {
                 + (configuration.isLinkEnabled()
                     ? "显示为 " + configuration.getLinkText() + "（可点击，悬停看完整网址）"
                     : "不处理"));
+        reportTooltip();
         reportServerFilter();
         logger.info("[vmessage] 没进服就断开（版本不符/封禁/顶号/登录超时）："
                 + (configuration.isDisconnectEnabled()
@@ -131,6 +132,28 @@ public class VMessage {
                     : "不广播"));
         logger.info("[vmessage] 被 /kick 踢出去：只播 [Kick] 一条，不再补 [Leave]");
         reportAwaitCancel();
+    }
+
+    /** 打印跨服聊天消息的悬停 / 点击配置。 */
+    private void reportTooltip() {
+        if (!configuration.isTooltipEnabled()) {
+            logger.info("[vmessage] 聊天消息的悬停提示 / 点击填命令：关闭");
+            return;
+        }
+        final String hover = safeTrim(configuration.getTooltipHover());
+        final String suggest = safeTrim(configuration.getTooltipSuggest());
+        if (hover.isEmpty() && suggest.isEmpty()) {
+            logger.info("[vmessage] 聊天消息的悬停提示 / 点击填命令：开着但 hover 和 suggest 都留空了，等于没效果");
+            return;
+        }
+        logger.info("[vmessage] 聊天消息悬停：" + (hover.isEmpty() ? "不显示" : "「" + hover + "」")
+                + "；点击填入聊天框：" + (suggest.isEmpty() ? "不响应" : "「" + suggest + "」")
+                + "；时间格式 " + configuration.getTooltipTimeFormat()
+                + "（时区 " + configuration.getTooltipZone() + "）");
+    }
+
+    private static String safeTrim(final String s) {
+        return s == null ? "" : s.trim();
     }
 
     /**

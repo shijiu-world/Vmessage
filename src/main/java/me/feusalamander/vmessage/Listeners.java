@@ -478,11 +478,11 @@ public final class Listeners {
             papi.format(FormatCleaner.mark(main), p.getUniqueId()).thenAccept(resolved ->
                     // PAPI 返回的是 § 码，而 Vmessage 用 & 序列化
                     deliver(p, FormatCleaner.finish(resolved.replace('§', '&')),
-                            FormatCleaner.finish(alt), m, permission));
+                            FormatCleaner.finish(alt), m, permission, actualservername));
             return;
         }
         // 没装桥接 / 手动关掉时也要清一遍，否则 format 里的 %xxx% 会原样显示给玩家
-        deliver(p, FormatCleaner.finish(main), FormatCleaner.finish(alt), m, permission);
+        deliver(p, FormatCleaner.finish(main), FormatCleaner.finish(alt), m, permission, actualservername);
     }
 
     /**
@@ -490,9 +490,10 @@ public final class Listeners {
      *
      * @param mainFormat 已经解析完的常规格式（可能含 PAPI 结果），还留着 #message# 没替换
      * @param altFormat  已经解析完的备用格式（从未走 PAPI），给黑名单里的子服用；与主格式相同时就是同一个串
+     * @param senderLabel 发送者所在子服的显示名（走 [Aliases] 别名），给悬停提示的 {server} 用
      */
     private void deliver(final Player p, final String mainFormat, final String altFormat,
-                         final String m, final boolean permission) {
+                         final String m, final boolean permission, final String senderLabel) {
         final boolean mini = configuration.isMinimessageEnabled();
         // 玩家聊天内容里的颜色码怎么处理；有 vmessage.color 权限的人一律解析
         final String colorMode = p.hasPermission(COLOR_PERMISSION) ? "parse" : configuration.getMessageColors();
@@ -511,6 +512,8 @@ public final class Listeners {
         // 这种时候所有服统一用备用格式，免得别的服收到一条被抹空的残缺消息。
         final boolean forceAlt = sender != null && configuration.isNoPapiServer(sender.getName());
         final boolean all = configuration.isAllEnabled();
+        // 悬停提示 + 点击填命令（[Tooltip]）
+        final boolean tooltip = ChatTooltip.enabled(configuration);
         for (final RegisteredServer server : proxyServer.getAllServers()) {
             // server-filter：名单外的服不参与跨服聊天，一条都不发过去
             if (!configuration.isChatServerAllowed(server.getServerInfo().getName())) {
@@ -530,7 +533,13 @@ public final class Listeners {
             if (target == null) {
                 continue;
             }
-            server.sendMessage(target);
+            // ⚠️ 发给【发送者自己所在服】的那一份不加悬停/点击：正常情况下那条是子服自己广播的、
+            //    轮不到代理发（all=false 时上面就 continue 掉了），只有 all=true 时才走到这，
+            //    这时再给发送者自己挂上 /msg 自己，纯粹是添乱。
+            final boolean toSender = all && Objects.equals(sender, server.getServerInfo());
+            server.sendMessage(tooltip && !toSender
+                    ? ChatTooltip.apply(target, configuration, p.getUsername(), senderLabel)
+                    : target);
         }
     }
 

@@ -121,6 +121,30 @@ await-cancel-timeout-millis = 100
 await-cancel-server-mode = "blacklist"
 await-cancel-servers = []
 
+# ★ 悬停 / 点击：别的子服的玩家把鼠标放到这条转发的聊天上时，显示发送时间；点一下把命令填进聊天框
+# 只对 [Message] 转发的聊天生效（Join/Leave/Kick 那些广播不带这两个效果）
+#
+# hover / suggest 里可以写：
+#   {time}   发送时刻，格式见下面的 time-format
+#   {player} 发送者名字
+#   {server} 发送者所在子服（走 [Aliases] 别名，例如「净土」）
+#
+# hover 留空 = 不显示提示；suggest 留空 = 点了没反应
+[Tooltip]
+enabled = true
+hover = "&e发送时间: &6{time}"
+# suggest 末尾留一个空格，玩家点完接着就能输入内容
+suggest = "/msg {player} "
+
+# {time} 的时间格式（Java 写法）
+#   HH:mm:ss              16:38:25
+#   yyyy-MM-dd HH:mm:ss   2026-10-06 16:38:25
+#   a h:mm                下午 4:38
+time-format = "HH:mm:ss"
+
+# {time} 用的时区；留空 = 服务器系统时区。例子："Asia/Shanghai"
+time-zone = ""
+
 # CMI 风格命名色对照表
 [Message.named-colors]
 brown = "#A52A2A"

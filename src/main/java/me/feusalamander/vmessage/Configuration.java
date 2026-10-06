@@ -6,6 +6,8 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -107,6 +109,19 @@ public final class Configuration {
     private volatile String linkHover;
     /** 识别网址的正则；写错就用默认的那条。 */
     private volatile Pattern linkPattern;
+    /**
+     * ★ 跨服聊天消息的悬停 / 点击：别的子服的玩家把鼠标放到这条消息上时显示发送时间，
+     * 点一下把命令（默认 /msg 发送者）填进自己的聊天框。
+     */
+    private volatile boolean tooltipEnabled = true;
+    /** 悬停提示；支持 {time} {player} {server}，留空则不显示提示。 */
+    private volatile String tooltipHover = ChatTooltip.DEFAULT_HOVER;
+    /** 点击时填入聊天框的命令；支持同样的三个占位符，留空则不响应点击。 */
+    private volatile String tooltipSuggest = ChatTooltip.DEFAULT_SUGGEST;
+    /** {time} 的时间格式（Java 的 DateTimeFormatter 写法）。 */
+    private volatile DateTimeFormatter tooltipTimeFormat = ChatTooltip.FALLBACK_TIME;
+    /** {time} 用的时区；留空 = 服务器系统时区。 */
+    private volatile ZoneId tooltipZone = ZoneId.systemDefault();
     private Toml config;
     private static File file;
     private volatile List<String> messagecmd;
@@ -220,6 +235,19 @@ public final class Configuration {
         final Pattern newLinkPattern =
                 compilePattern(config.getString("Link.pattern", Linkify.DEFAULT_PATTERN_SOURCE));
 
+        // ---- 跨服聊天消息的悬停 / 点击 ----
+        final boolean newTooltipEnabled = config.getBoolean("Tooltip.enabled", true);
+        // 留空 = 不做这一项（hover 空 = 不显示提示；suggest 空 = 点了没反应）
+        final String newTooltipHover = strOrEmpty(
+                config.getString("Tooltip.hover", ChatTooltip.DEFAULT_HOVER));
+        final String newTooltipSuggest = strOrEmpty(
+                config.getString("Tooltip.suggest", ChatTooltip.DEFAULT_SUGGEST));
+        // 时间格式 / 时区写错都只退回默认值，不能让别处的配置跟着失效
+        final DateTimeFormatter newTooltipTimeFormat = ChatTooltip.compileTimeFormat(
+                config.getString("Tooltip.time-format", ChatTooltip.DEFAULT_TIME_PATTERN));
+        final ZoneId newTooltipZone = ChatTooltip.parseZone(
+                trimToNull(config.getString("Tooltip.time-zone", "")));
+
         final Map<String, String> newCustomMeta = readCustomMeta(config);
 
         // ---- 给「没有 PAPI 桥接」的子服用的备用格式 ----
@@ -280,6 +308,12 @@ public final class Configuration {
         linkText = newLinkText;
         linkHover = newLinkHover;
         linkPattern = newLinkPattern;
+
+        tooltipEnabled = newTooltipEnabled;
+        tooltipHover = newTooltipHover;
+        tooltipSuggest = newTooltipSuggest;
+        tooltipTimeFormat = newTooltipTimeFormat;
+        tooltipZone = newTooltipZone;
 
         customMeta = newCustomMeta;
 
@@ -369,6 +403,11 @@ public final class Configuration {
         }
         final String t = s.trim();
         return t.isEmpty() ? null : t;
+    }
+
+    /** 读一个字符串，null 当空串 —— 调用方只需要判 isEmpty()，不用再判 null。 */
+    private static String strOrEmpty(final String s) {
+        return s == null ? "" : s;
     }
 
     /**
@@ -623,6 +662,30 @@ public final class Configuration {
     /** 识别网址用的正则；永远不为 null（写错时退回默认）。 */
     public Pattern getLinkPattern() {
         return this.linkPattern == null ? Linkify.defaultPattern() : this.linkPattern;
+    }
+
+    /**
+     * 跨服聊天消息的悬停 / 点击要不要挂（需要至少一项有内容才真的生效，
+     * 见 {@link ChatTooltip#enabled(Configuration)}）。
+     */
+    public boolean isTooltipEnabled() {
+        return this.tooltipEnabled;
+    }
+    /** 悬停提示；支持 {time} {player} {server}，留空 = 不显示提示。 */
+    public String getTooltipHover() {
+        return this.tooltipHover;
+    }
+    /** 点击时填入聊天框的命令；留空 = 点了没反应。 */
+    public String getTooltipSuggest() {
+        return this.tooltipSuggest;
+    }
+    /** 悬停提示里 {time} 的时间格式（永不 null，写错时退回 HH:mm:ss）。 */
+    public DateTimeFormatter getTooltipTimeFormat() {
+        return this.tooltipTimeFormat == null ? ChatTooltip.FALLBACK_TIME : this.tooltipTimeFormat;
+    }
+    /** {time} 用的时区（永不 null，留空或写错时是服务器系统时区）。 */
+    public ZoneId getTooltipZone() {
+        return this.tooltipZone == null ? ZoneId.systemDefault() : this.tooltipZone;
     }
 
     /**
