@@ -136,19 +136,24 @@ public class VMessage {
         reportAwaitCancel();
     }
 
-    /** 打印跨服聊天消息的悬停 / 点击配置。 */
+    /** 打印广播总闸 + 悬停 / 点击配置（聊天消息与五类广播共用同一套）。 */
     private void reportTooltip() {
+        // 广播总闸：关掉之后 Join/Leave/Kick 全部静默，用 WARN 喊一声免得服主以为插件坏了
+        if (!configuration.isBroadcastEnabled()) {
+            logger.warn("[vmessage] Join/Leave/Kick/Disconnect/Server-change 广播：全部关闭"
+                    + "（Broadcast.enabled = false；各段的 commands 也不跑）");
+        }
         if (!configuration.isTooltipEnabled()) {
-            logger.info("[vmessage] 聊天消息的悬停提示 / 点击填命令：关闭");
+            logger.info("[vmessage] 消息的悬停提示 / 点击填命令：关闭");
             return;
         }
         final String hover = safeTrim(configuration.getTooltipHover());
         final String suggest = safeTrim(configuration.getTooltipSuggest());
         if (hover.isEmpty() && suggest.isEmpty()) {
-            logger.info("[vmessage] 聊天消息的悬停提示 / 点击填命令：开着但 hover 和 suggest 都留空了，等于没效果");
+            logger.info("[vmessage] 消息的悬停提示 / 点击填命令：开着但 hover 和 suggest 都留空了，等于没效果");
             return;
         }
-        logger.info("[vmessage] 聊天消息悬停：" + (hover.isEmpty() ? "不显示" : "「" + hover + "」")
+        logger.info("[vmessage] 消息悬停（聊天 + 五类广播）：" + (hover.isEmpty() ? "不显示" : "「" + hover + "」")
                 + "；点击填入聊天框：" + (suggest.isEmpty() ? "不响应" : "「" + suggest + "」")
                 + "；时间格式 " + configuration.getTooltipTimeFormat()
                 + "（时区 " + configuration.getTooltipZone() + "）");

@@ -140,6 +140,10 @@ public final class Listeners {
     }
     @Subscribe
     private void onLeave(final DisconnectEvent e) {
+        // 广播总闸：关了就一条都不发（[Disconnect] 那一档也走这条路）
+        if (!configuration.isBroadcastEnabled()) {
+            return;
+        }
         final Player p = e.getPlayer();
         if(e.getPlayer().hasPermission("vmessage.silent.leave")){
             return;
@@ -184,16 +188,12 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = FormatCleaner.finish(luckperms(message, p));
         }
-        if (configuration.isMinimessageEnabled()) {
-            proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-        } else {
-            proxyServer.sendMessage(SERIALIZER.deserialize(message));
-        }
+        broadcast(message, p, servername);
 
     }
     @Subscribe
     private void onKick(final KickedFromServerEvent e) {
-        if (!configuration.isKickEnabled()) {
+        if (!configuration.isBroadcastEnabled() || !configuration.isKickEnabled()) {
             return;
         }
         if (!(e.getResult() instanceof KickedFromServerEvent.DisconnectPlayer)) {
@@ -231,15 +231,14 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = FormatCleaner.finish(luckperms(message, p));
         }
-        if (configuration.isMinimessageEnabled()) {
-            proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-        } else {
-            proxyServer.sendMessage(SERIALIZER.deserialize(message));
-        }
+        broadcast(message, p, servername);
 
     }
     @Subscribe
     private void onChange(final ServerPostConnectEvent e) {
+        if (!configuration.isBroadcastEnabled()) {
+            return;
+        }
         if (!configuration.isChangeEnabled() && !configuration.isJoinEnabled()) {
             return;
         }
@@ -283,11 +282,7 @@ public final class Listeners {
             if (luckPermsAPI != null) {
                 message = FormatCleaner.finish(luckperms(message, p));
             }
-            if (configuration.isMinimessageEnabled()) {
-                proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-            } else {
-                proxyServer.sendMessage(SERIALIZER.deserialize(message));
-            }
+            broadcast(message, p, actualservername);
         } else if (serverConnection.isPresent()){
             if (!configuration.isJoinEnabled()) {
                 return;
@@ -317,11 +312,7 @@ public final class Listeners {
             if (luckPermsAPI != null) {
                 message = FormatCleaner.finish(luckperms(message, p));
             }
-            if (configuration.isMinimessageEnabled()) {
-                proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-            } else {
-                proxyServer.sendMessage(SERIALIZER.deserialize(message));
-            }
+            broadcast(message, p, actualservername);
         }
     }
     /**
@@ -352,11 +343,28 @@ public final class Listeners {
         if (luckPermsAPI != null) {
             message = FormatCleaner.finish(luckperms(message, p));
         }
-        if (configuration.isMinimessageEnabled()) {
-            proxyServer.sendMessage(mm.deserialize(message.replace("§", "")));
-        } else {
-            proxyServer.sendMessage(SERIALIZER.deserialize(message));
+        // 没落到任何子服上 —— 没有服务器名可填，{server} 会是空串
+        broadcast(message, p, null);
+    }
+
+    /**
+     * 五类广播（Join / Leave / Kick / Disconnect / Server-change）的统一出口：发到全服，
+     * 并按 [Tooltip] 给整条挂上悬停 / 点击 —— 用的是跟聊天消息同一套 hover / suggest。
+     *
+     * <p>广播里没有 #message#，{player} 就是这条广播的主角（[Kick] 里是被踢的那个人，不是踢人的人）。
+     *
+     * @param message     已经把 #player# / #server# / meta 都替换好的串（空串就不发）
+     * @param p           广播里的那个玩家，填 {player}
+     * @param serverLabel 相关子服的显示名（走 [Aliases] 别名），填 {server}；没有就传 null
+     */
+    private void broadcast(final String message, final Player p, final String serverLabel) {
+        if (message == null || message.isEmpty()) {
+            return;
         }
+        final boolean mini = configuration.isMinimessageEnabled();
+        // MiniMessage 模式下 § 会破坏解析，先抠掉；& 模式保持原样（跟上游一致）
+        final Component component = parseQuietly(mini ? message.replace("§", "") : message, mini);
+        proxyServer.sendMessage(ChatTooltip.apply(component, configuration, p.getUsername(), serverLabel));
     }
 
     private String luckperms(String message, final Player p) {

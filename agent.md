@@ -24,10 +24,10 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 
 | 文件 | 行 | 职责 | 动它之前先想清楚 |
 |---|---|---|---|
-| `ChatTooltip.java` | ~150 | **新增**：给转发的聊天挂悬停提示（发送时间）+ 点击填命令（`/msg`） | 事件挂在**根组件**上往下继承；消息里的 [链接] 有自己的 openUrl/hover，优先级更高不会被抢 |
+| `ChatTooltip.java` | ~165 | 挂悬停提示（发送时间）+ 点击填命令（`/msg`）。聊天与五档广播共用 | 事件挂在**根组件**上往下继承；消息里的 [链接] 有自己的 openUrl/hover，优先级更高不会被抢 |
 | `BuildConstants.java`（⚠️在 `src/main/java-templates/`，**构建时生成**，别手改） | 21 | 唯一一个常量：`VERSION`，等于 pom 的 `<version>` | `@Plugin` 要编译期常量，没法写 `${project.version}`；以前硬编码导致产物里的版本号永远是旧值 |
 | `VMessage.java` | 262 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
-| `Listeners.java` | 582 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑 | 动这里等于动整个插件行为，必看下面「数据流」 |
+| `Listeners.java` | ~590 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑；`broadcast()` 是五档广播的统一出口 | 动这里等于动整个插件行为，必看下面「数据流」 |
 | `Configuration.java` | 705 | 全部配置项读取。用 `com.moandjiezana.toml.Toml`（tomlj）解析 | 加配置要同时改 `config.toml` 默认值 + README 表格 |
 | `ChatColors.java` | 278 | 颜色归一化：CMI 全系语法（`&x&F&F...`、3位hex、`{#F00}`、命名色、渐变） | 渐变是「抠哨兵 → 逐字染色 → 插回」 |
 | `FormatCleaner.java` | ~200 | 清理空段：`[&6%guild%&r]` 取不到值时连括号删掉；**PAPI 变量解析成功但值为空**时也要删（靠 mark/resolveMarks 记边界） | ⚠️ 靠哨兵机制，**不能折叠连续空格**（称号值里有空格）；只删紧贴哨兵**左侧**的颜色码 |
@@ -61,7 +61,15 @@ PlayerChatEvent (Listeners.onMessage)
   ↓ ⑧ 跑 [Message].commands
 ```
 
-进出服广播同理，走 `[Join]`/`[Leave]`/`[Kick]`/`[Disconnect]`/`[Server-change]` 五档。
+进出服广播同理，走 `[Join]`/`[Leave]`/`[Kick]`/`[Disconnect]`/`[Server-change]` 五档：
+
+```
+事件（Join/Leave/Kick/Disconnect/Server-change）
+  ↓ ① 总闸 [Broadcast].enabled —— false 就整条不处理（各档 commands 也不跑）
+  ↓ ② 该档自己的 enabled（Join.enabled 等）+ vmessage.silent.* 权限
+  ↓ ③ 跑该档 commands
+  ↓ ④ Listeners.broadcast()：格式串解析成组件 → 挂 [Tooltip]（{player}=广播主角）→ proxyServer.sendMessage
+```
 
 ---
 
@@ -87,7 +95,9 @@ PlayerChatEvent (Listeners.onMessage)
 11. 🔴 **校验产物别只看本地 `target/classes`**：`velocity-api` 自带注解处理器会在 compile 阶段
     按 `@Plugin` 重新生成 `velocity-plugin.json`，把 resources 里过滤好的那份盖掉
     （详见文末「已修复」一节）。务必 `jar xf` 出 **Actions 构建的那份产物**再验版本号。
-12. 📌 **升版本号只改 `pom.xml` 一处**：`@Plugin(version = BuildConstants.VERSION)`，
+12. 📌 **五档广播只从 `Listeners.broadcast()` 出去**（别在事件里直接 `proxyServer.sendMessage`）——
+    总闸 `[Broadcast].enabled` 和悬停/点击都挂在这一层，绕过去就会漏。
+13. 📌 **升版本号只改 `pom.xml` 一处**：`@Plugin(version = BuildConstants.VERSION)`，
     `BuildConstants` 由 `src/main/java-templates/` 生成。**别把字面量写回注解里**。
 
 ---
@@ -99,7 +109,7 @@ PlayerChatEvent (Listeners.onMessage)
 | 加一个配置项 | `Configuration.java` + `src/main/resources/config.toml` | README 的配置表格、起服日志里的 `reportConfig` |
 | 加一个占位符 | `Listeners.java` 的 `BUILTIN` 集合 + 替换逻辑 | 内建名不能当 meta 键查 |
 | 消息格式相关 | `Listeners.java` 的 `message()` | 只此一路，改格式串只影响游戏内显示 |
-| 悬停提示 / 点击填命令 | `ChatTooltip.java`；挂载点在 `Listeners.deliver()` 的 `server.sendMessage` 那一行 | 只对聊天生效。`all=true` 时发给发送者自己所在服的那份刻意不挂（不然点一下是给自己发消息） |
+| 悬停提示 / 点击填命令 | `ChatTooltip.java`；两个挂载点：`Listeners.deliver()`（转发到别的子服的聊天）和 `Listeners.broadcast()`（五档广播） | 聊天那路：`all=true` 时发给发送者自己所在服的那份刻意不挂（不然点一下是给自己发消息）。广播那路：`{player}` 是广播主角，`Disconnect` 没有 `{server}` |
 | 颜色/渐变语法 | `ChatColors.java` | VWhisper 有一份**同源但独立**的 `ChatColors`，改语法两边都要改 |
 | 网址识别 | `Linkify.java` 的 `pattern` | 默认值在 `config.toml` 的 `[Link]` |
 | 子服参与名单 | `Configuration.buildNoPapiServers` / `isChatServerAllowed` | 白名单配成空 = 全服断流，要打 WARN |

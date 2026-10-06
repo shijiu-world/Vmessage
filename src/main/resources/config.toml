@@ -121,8 +121,8 @@ await-cancel-timeout-millis = 100
 await-cancel-server-mode = "blacklist"
 await-cancel-servers = []
 
-# ★ 悬停 / 点击：别的子服的玩家把鼠标放到这条转发的聊天上时，显示发送时间；点一下把命令填进聊天框
-# 只对 [Message] 转发的聊天生效（Join/Leave/Kick 那些广播不带这两个效果）
+# ★ 悬停 / 点击：玩家把鼠标放到这条消息上时显示发送时间；点一下把命令填进自己的聊天框
+# 转发到别的子服的聊天**和** Join/Leave/Kick 那些广播都走这套（两处用同一个 hover / suggest）
 #
 # hover / suggest 里可以写：
 #   {time}   发送时刻，格式见下面的 time-format
@@ -160,6 +160,13 @@ cyan = "#00FFFF"
 silver = "#C0C0C0"
 beige = "#F5F5DC"
 
+
+# ★ 广播总闸（Join / Leave / Kick / Disconnect / Server-change 五类）
+# true（默认）= 照常发；false = 五类一条都不发，也不用把下面五个段的 enabled 一个个改成 false
+#   ⚠️ false 时各段自己的 commands 也不跑（跟把五个 enabled 全关掉的效果一致）
+#   ⚠️ 只管广播，不管聊天：[Message] 的跨服转发不受它影响
+[Broadcast]
+enabled = true
 
 [Join]
 format = "&e#player# 加入了 #server#"

@@ -122,6 +122,11 @@ public final class Configuration {
     private volatile DateTimeFormatter tooltipTimeFormat = ChatTooltip.FALLBACK_TIME;
     /** {time} 用的时区；留空 = 服务器系统时区。 */
     private volatile ZoneId tooltipZone = ZoneId.systemDefault();
+    /**
+     * ★ Join / Leave / Kick / Disconnect / Server-change 五类广播的总闸。
+     * false = 一条都不发（连各段自己的 commands 也不跑），等于把广播整体关掉；true = 交给各段的 enabled 决定。
+     */
+    private volatile boolean broadcastEnabled = true;
     private Toml config;
     private static File file;
     private volatile List<String> messagecmd;
@@ -248,6 +253,11 @@ public final class Configuration {
         final ZoneId newTooltipZone = ChatTooltip.parseZone(
                 trimToNull(config.getString("Tooltip.time-zone", "")));
 
+        // ---- 广播（Join / Leave / Kick / Disconnect / Server-change）的总闸 ----
+        // ⚠️ 问号表达式在这里不顶用：toml4j 对缺失的键返回 null，Boolean 拆箱会 NPE。
+        final Boolean broadcastRaw = config.getBoolean("Broadcast.enabled", Boolean.TRUE);
+        final boolean newBroadcastEnabled = broadcastRaw == null || broadcastRaw;
+
         final Map<String, String> newCustomMeta = readCustomMeta(config);
 
         // ---- 给「没有 PAPI 桥接」的子服用的备用格式 ----
@@ -314,6 +324,7 @@ public final class Configuration {
         tooltipSuggest = newTooltipSuggest;
         tooltipTimeFormat = newTooltipTimeFormat;
         tooltipZone = newTooltipZone;
+        broadcastEnabled = newBroadcastEnabled;
 
         customMeta = newCustomMeta;
 
@@ -686,6 +697,14 @@ public final class Configuration {
     /** {time} 用的时区（永不 null，留空或写错时是服务器系统时区）。 */
     public ZoneId getTooltipZone() {
         return this.tooltipZone == null ? ZoneId.systemDefault() : this.tooltipZone;
+    }
+
+    /**
+     * 广播总闸：Join / Leave / Kick / Disconnect / Server-change 五类要不要发。
+     * false = 一条都不发，也不用去改五个段各自的 enabled。
+     */
+    public boolean isBroadcastEnabled() {
+        return this.broadcastEnabled;
     }
 
     /**

@@ -157,13 +157,23 @@ server-filter = []                 # velocity.toml 里注册的服务器名，�
 
 `{#brown}`、`{#orange}` 这类 CMI 命名色的对照表。查不到的命名色会被摘掉标记、保留文字。
 
+### `[Broadcast]` —— 五档广播的总闸
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `enabled` | `true` | **一句话关掉全部广播**：`false` 时 Join/Leave/Kick/Disconnect/Server-change 一条都不发 |
+
+- 不用把五个 `enabled` 一个个改成 `false`；想恢复就改回 `true`。
+- ⚠️ `false` 时各档自己配的 `commands` **也不跑**（效果等同把五档的 `enabled` 全关）。
+- ⚠️ 只管广播，不管聊天：`[Message]` 的跨服转发不受它影响。
+
 ### `[Join]` / `[Leave]` / `[Kick]` / `[Disconnect]` / `[Server-change]`
 
-五档进出服广播，结构相同：
+五档进出服广播，结构相同（整体开关见上面的 `[Broadcast]`）：
 
 | 配置 | 说明 |
 |---|---|
-| `enabled` | 该档开关 |
+| `enabled` | 该档开关（总闸 `[Broadcast].enabled = false` 时这一项不用管） |
 | `format` | 格式串 |
 | `commands` | 触发时执行的命令 |
 
@@ -196,8 +206,11 @@ survival = "净土"
 
 ### `[Tooltip]` —— 悬停看发送时间，点一下自动填私聊命令
 
-别的子服的玩家看到这条转发的聊天时，鼠标放上去会显示提示（默认发送时间），
-点一下把命令**填进聊天框**（不是直接发出去，玩家可以接着输入内容）。
+鼠标放到消息上会显示提示（默认发送时间），点一下把命令**填进聊天框**
+（不是直接发出去，玩家可以接着输入内容）。
+
+跨服转发的聊天**和**五档广播（Join/Leave/Kick/Disconnect/Server-change）都走这一套，
+共用同一个 `hover` / `suggest`；广播里的 `{player}` 就是那条广播的主角。
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
@@ -217,10 +230,11 @@ survival = "净土"
 
 几点说明：
 
-- **只对 `[Message]` 转发的聊天生效** —— Join/Leave/Kick 那些广播不带这两个效果。
 - 悬停/点击是挂在**整条消息**上的；消息里的「[链接]」自带打开浏览器的动作和网址提示，
   优先级更高，不会被抢走。
-- `all = true` 时发给**发送者自己所在服**的那一份不加悬停/点击（不然点一下是给自己发消息）。
+- `all = true` 时发给**发送者自己所在服**的那一份聊天不加悬停/点击（不然点一下是给自己发消息）。
+- 广播里 `{server}` 是相关子服的显示名；`Disconnect` 那档人根本没落到子服上，`{server}` 是空串。
+- 不想让广播带上点击效果，把 `suggest` 留空即可（悬停照旧）。
 - 悬停文本支持 `&` 颜色码；想换行就写 `\n`（TOML 里 `"第一行\n第二行"`）。
 - `suggest` 末尾留一个空格，玩家点完就能直接接着打字；这里只能填到聊天框，不能直接执行。
 
@@ -439,6 +453,12 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 
 见上文 [`[Tooltip]`](#tooltip--悬停看发送时间点一下自动填私聊命令)。跨服聊天消息整条挂上悬停提示
 和 `suggest_command`，`all = true` 时发给发送者自己所在服的那一份不挂。
+
+### 16. 广播也带悬停/点击，并加了 `[Broadcast]` 总闸
+
+五档广播（Join/Leave/Kick/Disconnect/Server-change）走 `Listeners.broadcast()` 统一出口，
+跟聊天共用同一套 `hover` / `suggest`（`{player}` = 广播主角）。
+新增 `[Broadcast].enabled`：**一个开关**关掉全部广播（含各档的 `commands`），默认 `true`。
 
 ---
 

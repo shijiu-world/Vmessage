@@ -15,7 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 给**转发出去的聊天消息**挂上悬停提示和点击动作 —— 别的子服的玩家看到这条消息时，
  * 鼠标放上去能看见发送时间，点一下会把命令（默认 /msg 发送者）填进聊天框。
  *
- * <p>只作用在 [Message] 转发的聊天上：Join/Leave/Kick 那些广播没有「给谁发消息」的含义。
+ * <p>转发的聊天**和** Join/Leave/Kick/Disconnect/Server-change 五类广播都走这里，
+ * 两套消息共用同一份 hover / suggest —— 广播里没有 #message#，{player} 就是广播的主角。
  *
  * <p>⚠️ 为什么是给整条消息的**根组件**挂事件：adventure 的事件跟样式一样是沿组件树往下继承的，
  *    自己没设过的子文本会继承根上的那份，而消息里的「[链接]」自己带了 openUrl 和网址提示，
