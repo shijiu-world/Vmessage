@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -26,8 +28,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * </ol>
  *
  * <p>⚠️ 为什么是给组件的**根**挂事件：adventure 的事件跟样式一样是沿组件树往下继承的，
- *    自己没设过的子文本会继承根上的那份，而正文里的「[链接]」自己带了 openUrl 和网址提示，
- *    不会被这里覆盖（点链接照旧打开浏览器）。
+ *    自己没设过的子文本会继承根上的那份。
+ *
+ * <p>🔴 但**正文里的「[链接]」不能靠继承规则保**，得显式跳过：它自己带了 openUrl 和
+ *    「点击打开：完整网址」的提示，鼠标放上去要看网址、点一下要跳浏览器。
+ *    {@link #copy(Component, Configuration, String)} 是逐节点下钻着挂的，撞到自带事件的整棵跳过。
  */
 public final class ChatTooltip {
     private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.builder()
@@ -123,23 +128,64 @@ public final class ChatTooltip {
      * 而父（整条消息）挂的是「悬停看发送时间 / 点击填 /msg」，正文不覆盖掉就会连它一起继承，
      * 那玩家在正文上也会看到发送时间、点一下也变成填 /msg，正是要避免的。
      *
+     * <p>🔴 **正文里的网址（[链接]）必须原样放过**：它自己带了 openUrl 和「点击打开：完整网址」
+     * 的提示，玩家鼠标放上去要看网址、点一下要跳浏览器。所以这里是**逐节点**下钻着挂，
+     * 撞到已经有自己事件的节点就整棵跳过 —— 不靠「子节点会覆盖父的」这条继承规则兜底，
+     * 免得哪天继承行为变了、或者链接被多包了一层空节点，链接就变成「复制该文本」了。
+     *
      * @param body 正文组件（已经做完颜色和网址处理）
-     * @param text 点一下要复制到剪贴板的纯文本
+     * @param text 点一下要复制到剪贴板的纯文本（含完整网址，不是「[链接]」三个字）
      */
     static Component copy(final Component body, final Configuration cfg, final String text) {
         if (body == null || !copyEnabled(cfg) || text == null || text.isEmpty()) {
             return body;
         }
+        // 提示留空也要 showText 一个空组件：空 = 什么都不显示，但能挡住父组件的悬停继承下来
         final String hover = cfg.getTooltipCopyHover();
+        final Component tip = hasText(hover) ? LEGACY.deserialize(hover) : Component.empty();
         try {
-            // 提示留空也要 showText 一个空组件：空 = 什么都不显示，但能挡住父组件的悬停继承下来
-            final Component tip = hasText(hover) ? LEGACY.deserialize(hover) : Component.empty();
+            return copyDeep(body, tip, text);
+        } catch (final RuntimeException e) {
+            // 组件树不支持改 children（MiniMessage 解出的非文本节点会抛）：退回只挂根上，
+            // 复制功能还在，只是链接那一截得靠继承规则自己保住
+            warnOnce(e);
             return body.hoverEvent(HoverEvent.showText(tip))
                     .clickEvent(ClickEvent.copyToClipboard(text));
-        } catch (final RuntimeException e) {
-            warnOnce(e);
-            return body;
         }
+    }
+
+    /**
+     * 逐节点挂「复制」，**已经有自己事件的整棵子树直接跳过**（那就是 [链接]）。
+     *
+     * <p>为什么不是简单地在根上挂一次就完事：根上挂一次要指望「子节点自带事件会覆盖继承来的」，
+     * 而链接有时候会被包一层空节点（Linkify 尾部有标点时会 append 出一个空根），
+     * 那层空根自己是没事件的，就可能被挂上复制。逐节点判一遍最稳。
+     */
+    private static Component copyDeep(final Component node, final Component tip, final String text) {
+        // 自己带了 hover / click = 特殊片段（网址）：原样返回，一个字都不动
+        if (node.hoverEvent() != null || node.clickEvent() != null) {
+            return node;
+        }
+        Component out = node;
+        final List<Component> children = node.children();
+        if (!children.isEmpty()) {
+            List<Component> replaced = null;
+            for (int i = 0; i < children.size(); i++) {
+                final Component old = children.get(i);
+                final Component neu = copyDeep(old, tip, text);
+                if (neu != old && replaced == null) {
+                    replaced = new ArrayList<>(children);
+                }
+                if (replaced != null) {
+                    replaced.set(i, neu);
+                }
+            }
+            if (replaced != null) {
+                out = node.children(replaced);
+            }
+        }
+        return out.hoverEvent(HoverEvent.showText(tip))
+                .clickEvent(ClickEvent.copyToClipboard(text));
     }
 
     /**

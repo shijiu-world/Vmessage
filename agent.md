@@ -77,6 +77,7 @@ PlayerChatEvent (Listeners.onMessage)
 |---|---|---|---|
 | 聊天整条（= 前缀+名字那一段） | `Tooltip.hover` 发送时间 | `Tooltip.suggest` 填命令 | `ChatTooltip.apply()` ← `deliver()` |
 | 聊天正文 `#message#` | `Tooltip.copy-hover` | 复制到剪贴板 | `ChatTooltip.copy()` ← `build()` |
+| 正文里的「[链接]」 | `[Link].hover` 网址 | **打开浏览器** | `Linkify` 自己做，复制档**逐节点跳过**它 |
 | 五档广播 | `Tooltip.hover` | **无** | `ChatTooltip.applyHover()` ← `broadcast()` |
 
 ---
@@ -108,6 +109,10 @@ PlayerChatEvent (Listeners.onMessage)
     光是不设就会把父的继承过来）。正文的「复制」档正是靠这个把「发送时间 / 填 /msg」挡在外面。
     复制用的纯文本要用自写的 `ChatTooltip.plain()`（`PlainComponentSerializer` 不在 Velocity 4.x 里），
     且必须在网址被 Linkify 换成「[链接]」**之前**取。
+12b. 🔴 **正文里的「[链接]」必须逐节点跳过，不能只靠 12 的继承规则保**：`ChatTooltip.copyDeep()`
+    递归下钻，撞到自带 `hover`/`click` 的整棵子树就原样返回。原因：链接后面跟标点时
+    Linkify 会 `append` 出一个**空根**（空根自己没事件），靠继承就保不住链接了 ——
+    玩家会看到「复制该文本」、点一下变成复制而不是开浏览器。改 `copy()` 时别退回「只在根上挂一次」。
 13. 📌 **五档广播只从 `Listeners.broadcast()` 出去**（别在事件里直接 `proxyServer.sendMessage`）——
     总闸 `[Broadcast].enabled` 和悬停/点击都挂在这一层，绕过去就会漏。
 13. 📌 **升版本号只改 `pom.xml` 一处**：`@Plugin(version = BuildConstants.VERSION)`，
