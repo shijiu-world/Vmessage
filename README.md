@@ -75,8 +75,7 @@
 | `message-colors` | `"strip"` | `strip` 去色 / `parse` 解析颜色码 / `keep` 原样保留。持有 `vmessage.color` 的玩家强制 parse |
 | `papiproxybridge` | `true` | 子服 PAPI 变量总开关；没装桥接时自动降级为空，不报错 |
 | `no-papi-format` | 见文件 | 发给「没装桥接的子服」的简化格式，里面不能写 `%xxx%`；留空则用 `format` |
-| `no-papi-servers` | `[]` | 没装桥接的子服名单（`velocity.toml` 里注册的名字） |
-| `read-bridge-blacklist` | `true` | 把 PAPIProxyBridge 的 `serverList` 自动并入上面的名单，两处只维护一个 |
+| `papi-servers` | `[]` | **白名单**：装了桥接的子服（`velocity.toml` 里注册的名字）。见下 |
 | `papi-cache-millis` | `30000` | 解析结果缓存时长；`0` = 关缓存 |
 | `papi-timeout-millis` | `1500` | 等子服响应的超时，超时就把 `%xxx%` 当空串 |
 | `papi-retry-times` | `0` | 桥接内部重试次数，设 0 避免失败时白等好几轮超时 |
@@ -390,8 +389,25 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 
 ### 3. 支持子服 PlaceholderAPI 变量（可选）
 
-见上文「占位符」。配套加了 `no-papi-format` / `no-papi-servers` / `read-bridge-blacklist`，
-给没桥接的服发简化格式，名单自动沿用 PPB 的黑名单（两处只维护一个）。
+见上文「占位符」。配套加了 `no-papi-format` / `papi-servers`，给没桥接的服发简化格式。
+
+#### `papi-servers` —— 哪些子服装了桥接（白名单）
+
+```toml
+[Message]
+no-papi-format = "<#player#>: #message#"
+papi-servers = ["lobby", "survival", "survival2", "industry"]
+```
+
+- **名单非空** → 只有列出来的服解析 `%xxx%`，**没写进来的服一律走 `no-papi-format`**
+  （这些服发出去的消息也用 `no-papi-format`，免得别的服收到一条被抹空的残缺消息）。
+- **留空** → 全部都按「装了桥接」处理（老版 `no-papi-servers = []` 就是这个行为，升级上来不会变样）。
+  代价是：以后新加一个没装桥接的服，它每次发言都要白等一次 `papi-timeout-millis` 才出消息。
+- 写 `velocity.toml` 里注册的服务器名（不是 `[Aliases]` 的中文别名），大小写不敏感。
+- 🔴 老配置里的 `no-papi-servers`（黑名单）和 `read-bridge-blacklist` **已经删掉**了。
+  起服时如果还留着这两行会打一条 warn —— 它们不会被执行，也不会自动转换
+  （黑名单转白名单得先知道「全部服有哪些」，插件在配置阶段拿不到）。
+  手动改：把**装了桥接**的服列进 `papi-servers`，然后删掉那两行。
 
 ### 4. 空段清理（含「解析成功但值是空的」变量）
 
@@ -516,6 +532,18 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 `%xxx%` 子服 PAPI 变量（跟 `Message.format` 同一批、按发送者所在服解析）。
 🔴 **五档广播不加前缀** —— 广播走的是另一档挂载点（`ChatTooltip.applyHover`），
 根本传不进前缀，所以 Join/Leave/Kick 那些提示里永远只有 `hover` 那一行。
+
+### 20. `no-papi-servers` 改成白名单 `papi-servers`
+
+原来是「列出**没装**桥接的服」（黑名单），现在是「列出**装了**桥接的服」（白名单）：
+装了桥接的服通常比没装的少，名单更短，而且新加的服默认按「没装」处理，不会白等超时。
+
+同时删掉了 `read-bridge-blacklist`（自动沿用 PAPIProxyBridge `settings.yml` 的 `serverList`）：
+它是纯文本解析 yml，PPB 改格式就静默失效；而且黑名单语义跟现在的白名单对不上，
+留着只会让人以为「名单会自动补全」。
+
+⚠️ **老配置不会自动迁移**：`no-papi-servers` / `read-bridge-blacklist` 留着会打一条 warn 并被忽略
+（黑名单转白名单要先知道「全部服有哪些」，配置阶段拿不到）。手动把装了桥接的服列进 `papi-servers` 即可。
 
 ---
 

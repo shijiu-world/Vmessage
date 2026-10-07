@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @Plugin(
@@ -113,9 +114,13 @@ public class VMessage {
     private void reportConfig() {
         logger.info("[vmessage] 聊天内容颜色码处理：" + configuration.getMessageColors()
                 + "（strip=剥掉 / parse=解析 / keep=原样；有 vmessage.color 权限的玩家一律解析）");
-        if (!configuration.getNoPapiServers().isEmpty()) {
-            logger.info("[vmessage] 这些服收不到 PAPI 变量（走 no-papi-format）："
-                    + String.join(", ", configuration.getNoPapiServers()));
+        final Set<String> papiServers = configuration.getPapiServers();
+        if (papiServers.isEmpty()) {
+            logger.info("[vmessage] 所有子服都按「装了 PAPI 桥接」处理（papi-servers 留空）"
+                    + " —— 有服没装的话把它之外的服列进 papi-servers，否则它每次发言白等一次超时");
+        } else {
+            logger.info("[vmessage] 只有这些服解析 %xxx%（其余走 no-papi-format）："
+                    + String.join(", ", papiServers));
         }
         final String gradient = configuration.getGradientPermission();
         logger.info("[vmessage] 渐变：" + (gradient.isEmpty()

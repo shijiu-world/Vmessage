@@ -34,7 +34,6 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 | `Linkify.java` | 96 | 网址 → 可点击 `[链接]` | 正则用 RFC3986 字符集，**不是** `https?://\S+`（中文无空格会吃整句） |
 | `Suppression.java` | 188 | 收子服「这条聊天被取消了」信号，命中则整条丢弃 | 通道 `vmessage:suppress`，配套 `VmessageSuppress` 插件 |
 | `PapiBridge.java` | 136 | 反射调 PAPIProxyBridge 解析 `%xxx%`，带缓存 | 反射是刻意的——桥接是可选依赖，不能编译期硬引 |
-| `PapiBlacklist.java` | 169 | 读 PPB 的 `settings.yml`，把黑名单并入 `no-papi-servers` | 纯文本解析 yml，格式变了会失效（失效模式是取不到 → 按全参与处理） |
 | `KickTracker.java` | 48 | 踢人去重：被 `/kick` 时 Velocity 同时给 `KickedFromServerEvent` 和 `DisconnectEvent` | 标记取一次即失效 + 10 秒兜底 |
 | `ReloadCommand.java` | 51 | `/vmessage reload` | |
 | `SendCommand.java` | 41 | `/sendall` | |
@@ -136,6 +135,13 @@ Listeners.message()
 15. 📌 **`prefix` 与主格式要分开调 `PapiBridge`**：两者是不同的模板串，不能先拼一个串再按
     分隔符拆（PAPI 的返回值里完全可能出现那个分隔符）。没含 `%` 的那一路直接给
     `CompletableFuture.completedFuture`，别多跑一趟桥接。
+16. 🔴 **`Message.papi-servers` 是白名单**（列出**装了**桥接的服；v1.13.0 之前的
+    `no-papi-servers` 是黑名单，已删）。判定的唯一入口是 `Configuration.isPapiServer()`，
+    `isNoPapiServer()` 只是它的取反 —— 别在调用点自己写 `!contains(...)`。
+    ⚠️ **留空 = 全部都按「装了」算**（沿用老默认，升级不炸）；只有非空时才逐个比对。
+    老键 `no-papi-servers` / `read-bridge-blacklist` 只在 `warnRenamedKeys()` 里提示一句，
+    **不参与计算** —— 黑名单转白名单要先知道「全部服有哪些」，配置阶段拿不到。
+    （`PapiBlacklist.java` 已随 `read-bridge-blacklist` 一起删掉。）
 
 ---
 
@@ -242,7 +248,7 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
 | 现象 | 看什么 |
 |---|---|
 | 一说话就崩 | 是不是用了原版 jar？必须自编译修补版。原版在 Velocity 4.x 上 `NoSuchMethodError` |
-| `%xxx%` 显示为空 | 目标服没装 PPB-Bukkit；或没加进 `no-papi-servers`（每次发言白等一次超时） |
+| `%xxx%` 显示为空 | 目标服没装 PPB-Bukkit；或 `papi-servers` 白名单里没写它（每次发言白等一次超时） |
 | 玩家输入「64」被别的服看到 | 那个子服没装 `VmessageSuppress`；或它被写进了 `await-cancel-servers` 黑名单（黑名单 = 不等） |
 | 被踢的人播两条 | `KickTracker` 失效了，查标记是不是没取用/没兜底 |
 | 消息里网址坏了 | 剥色正则的 `(?!=)` 断言被改掉了 |

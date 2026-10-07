@@ -45,12 +45,14 @@ papiproxybridge = true
 # 不解析 %xxx%。若留空则使用 format。
 no-papi-format = "<#player#>: #message#"
 
-# 没装 PAPIProxyBridge-Bukkit 的服务器列表
-# velocity.toml 里注册的服务器名
-no-papi-servers = []
-
-# 开启后，将 PAPIProxyBridge 的 serverList 合并进来
-read-bridge-blacklist = true
+# 装了 PAPIProxyBridge-Bukkit 的服务器列表
+# velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名），大小写不敏感
+#
+# ⚠️ 这是【白名单】—— 名单非空时，只有这里列出的服会解析 %xxx%，
+#    没写进来的服一律走上面的 no-papi-format
+#    留空 = 全部都按「装了桥接」处理（老版本 no-papi-servers = [] 就是这个行为），
+#          代价是：新加一个没装桥接的服，它每次发言都要白等一次超时才出消息
+papi-servers = []
 
 # 缓存时间
 papi-cache-millis = 30000

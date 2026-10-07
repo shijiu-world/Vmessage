@@ -1,6 +1,7 @@
 package me.feusalamander.vmessage;
 
 import com.moandjiezana.toml.Toml;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.InputStream;
@@ -8,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -153,12 +153,18 @@ public final class Configuration {
      * 为空表示不另配 —— 那些服收到的仍是主 format，只是 %xxx% 会被抹掉。
      */
     private volatile String noPapiFormat;
-    /** 上面那套格式适用哪些服；存小写，用 velocity.toml 里注册的服务器名。 */
-    private volatile Set<String> noPapiServers = new LinkedHashSet<>();
-    /** 是否自动沿用 PAPIProxyBridge settings.yml 里的黑名单。 */
-    private volatile boolean readBridgeBlacklist;
-    /** 代理的 plugins 目录（用来找 PAPIProxyBridge 的配置），可能为 null。 */
-    private volatile Path pluginsDir;
+    /**
+     * 装了 PAPIProxyBridge-Bukkit、**能**解析 {@code %xxx%} 的子服；存小写，
+     * 用 velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名）。
+     *
+     * <p>⚠️ 语义是**白名单**：
+     * <ul>
+     *   <li>名单非空 → 只有名单里的服解析 {@code %xxx%}，其余一律走 {@link #noPapiFormat}；</li>
+     *   <li>留空 → 全部都按「装了桥接」处理（跟老版 {@code no-papi-servers = []} 完全一致，
+     *       升级上来不会变样；代价是新加的服没装桥接时每次发言要白等一次 timeout）。</li>
+     * </ul>
+     */
+    private volatile Set<String> papiServers = new LinkedHashSet<>();
     /** 改了 config.toml 之后自动重载，不用敲命令（默认关）。 */
     private volatile boolean autoReload;
     /** 自动重载的检查间隔（秒）。 */
@@ -167,10 +173,6 @@ public final class Configuration {
     private volatile String lastError;
 
     Configuration(Toml config) {
-        // file 由 load() 先设好：plugins/vmessage/config.toml → 上两级就是 plugins/
-        if (file != null) {
-            pluginsDir = file.toPath().toAbsolutePath().getParent().getParent();
-        }
         apply(config);
     }
 
@@ -282,9 +284,8 @@ public final class Configuration {
 
         // ---- 给「没有 PAPI 桥接」的子服用的备用格式 ----
         final String newNoPapiFormat = trimToNull(config.getString("Message.no-papi-format", ""));
-        final boolean newReadBridgeBlacklist = config.getBoolean("Message.read-bridge-blacklist", true);
         // 整个集合替换，不在原集合上 clear+addAll —— 免得别的线程读到「清空了但还没填」的中间态
-        final Set<String> newNoPapiServers = buildNoPapiServers(config, newReadBridgeBlacklist);
+        final Set<String> newPapiServers = readServerList(config, "Message.papi-servers");
 
         // ---- 热重载 ----
         final boolean newAutoReload = config.getBoolean("auto-reload", false);
@@ -352,8 +353,8 @@ public final class Configuration {
         customMeta = newCustomMeta;
 
         noPapiFormat = newNoPapiFormat;
-        readBridgeBlacklist = newReadBridgeBlacklist;
-        noPapiServers = newNoPapiServers;
+        papiServers = newPapiServers;
+        warnRenamedKeys(config);
 
         autoReload = newAutoReload;
         autoReloadIntervalSeconds = newAutoReloadIntervalSeconds;
@@ -389,18 +390,22 @@ public final class Configuration {
         return list == null ? Collections.emptyList() : list;
     }
 
-    private Set<String> buildNoPapiServers(final Toml config, final boolean readBridge) {
-        final Set<String> names = readServerList(config, "Message.no-papi-servers");
-        if (!readBridge || pluginsDir == null) {
-            return names;
+    /**
+     * 老配置里那两个键已经废了 —— 看到就提醒一句，但**不要**拿它们干活：
+     * {@code no-papi-servers} 是黑名单、跟现在的白名单语义相反，直接沿用会整反；
+     * 也没法自动转换（要把黑名单转白名单得先知道「全部服有哪些」，这里拿不到）。
+     */
+    private static void warnRenamedKeys(final Toml config) {
+        if (config.contains("Message.no-papi-servers")
+                || config.contains("Message.read-bridge-blacklist")) {
+            LoggerFactory.getLogger("vmessage").warn(
+                    "[vmessage] config.toml 里的 no-papi-servers / read-bridge-blacklist 已经不用了"
+                            + "（papi-servers 改成白名单后它们没有意义），现在一律忽略。"
+                            + "请把这两行删掉，改为列出【装了桥接】的服：papi-servers = [\"lobby\", \"survival\"]");
         }
-        // 与 PAPIProxyBridge settings.yml 里的黑名单取并集（只加不减，config.toml 里写的永远生效）
-        final Set<String> merged = new LinkedHashSet<>(names);
-        merged.addAll(PapiBlacklist.read(pluginsDir));
-        return merged;
     }
 
-    /** 读一个字符串数组（允许写成 no-papi-servers = ["killer"] 或多行）。 */
+    /** 读一个字符串数组（允许写成 papi-servers = ["lobby", "survival"] 或多行）。 */
     private static Set<String> readServerList(final Toml config, final String path) {
         final Set<String> set = new LinkedHashSet<>();
         final List<String> list = config.getList(path);
@@ -757,28 +762,30 @@ public final class Configuration {
     }
 
     /**
-     * 该服是否要用 {@link #getNoPapiFormat()}。
+     * 该服**能**解析 {@code %xxx%} 吗（= 装了 PAPIProxyBridge-Bukkit）。
      * 传 velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名），大小写不敏感。
+     *
+     * <p>⚠️ 白名单语义：名单留空时一律返回 {@code true}（全部按装了算）；
+     * 只有名单非空时才逐个比对 —— 没写进去的服都算没装，走 {@link #getNoPapiFormat()}。
+     */
+    public boolean isPapiServer(final String serverName) {
+        if (serverName == null) {
+            return true;
+        }
+        return papiServers.isEmpty() || papiServers.contains(serverName.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * 该服是否要用 {@link #getNoPapiFormat()} —— 就是 {@link #isPapiServer(String)} 取反。
+     * 取反写在这儿而不是散在各个调用点，免得哪天有人只改一边。
      */
     public boolean isNoPapiServer(final String serverName) {
-        return serverName != null && noPapiServers.contains(serverName.toLowerCase(Locale.ROOT));
+        return !isPapiServer(serverName);
     }
 
-    /** 当前生效的 no-papi 名单（小写），只在日志里用。 */
-    public Set<String> getNoPapiServers() {
-        return Collections.unmodifiableSet(noPapiServers);
-    }
-
-    /** 运行时追加 no-papi 名单（外部调用，比如命令或后续扩展）。 */
-    public void addNoPapiServers(final Collection<String> serverNames) {
-        if (serverNames == null) {
-            return;
-        }
-        for (final String name : serverNames) {
-            if (name != null && !name.trim().isEmpty()) {
-                noPapiServers.add(name.trim().toLowerCase(Locale.ROOT));
-            }
-        }
+    /** 当前生效的 papi 白名单（小写），只在日志里用；空 = 全部都按装了算。 */
+    public Set<String> getPapiServers() {
+        return Collections.unmodifiableSet(papiServers);
     }
 	
     /**
