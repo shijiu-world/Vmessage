@@ -140,6 +140,8 @@ await-cancel-servers = []
 #     %xxx%     子服 PAPI 变量（需要装 PAPIProxyBridge，例如 %playerTitle_use%）
 #   例：prefix = "&8[&b#server#&8] &7来自 &f%playerTitle_use%&7"
 #   ⚠️ 老配置里没有这个键时按「不加」处理（不会凭空多出一截），想要就自己加一行
+#   ⚠️ prefix 是直接拼在 hover 前面的，不会自动加分隔符 —— 末尾想空格/换行就自己写，
+#      写了就会【原样保留】（例如 "&8[&6#server#&8] " 那个尾空格是分隔符，不能省）
 #
 # hover 留空 = 不显示提示；suggest 留空 = 点了没反应
 [Tooltip]

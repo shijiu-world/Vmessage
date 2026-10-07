@@ -505,12 +505,13 @@ public final class Listeners {
                     // PAPI 返回的是 § 码，而 Vmessage 用 & 序列化
                     deliver(p, FormatCleaner.finish(resolvedMain.replace('§', '&')),
                             FormatCleaner.finish(alt), m, permission, actualservername,
-                            FormatCleaner.finish(resolvedPrefix.replace('§', '&'))));
+                            // ⚠️ 前缀末尾的空格是分隔符（"&8[&6#server#&8] "），不能 trim
+                            FormatCleaner.finishKeepTrailing(resolvedPrefix.replace('§', '&'))));
             return;
         }
         // 没装桥接 / 手动关掉时也要清一遍，否则 format 里的 %xxx% 会原样显示给玩家
         deliver(p, FormatCleaner.finish(main), FormatCleaner.finish(alt), m, permission,
-                actualservername, FormatCleaner.finish(prefix));
+                actualservername, FormatCleaner.finishKeepTrailing(prefix));
     }
 
     /**

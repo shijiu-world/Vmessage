@@ -171,7 +171,10 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
   ```
   ⚠️ 用 PowerShell 跑，别用 Git Bash（会把 `-cp` 里的 `D:/...` 做路径转换 → 找不到主类）。
   断言比的是「剥掉颜色码之后玩家看到的文本」，不是原始串 —— 多余空格是视觉问题，`&r` 会干扰比对。
-- `ChatTooltip` 也有一份独立的测试台：`D:\game\Server\.workbuddy\vmessage\TooltipTest.java`（74 条断言）。
+- `ChatTooltip` 也有一份独立的测试台：`D:\game\Server\.workbuddy\vmessage\TooltipTest.java`（80 条断言，含 `FormatCleaner` 的收尾空格用例）。
+- 🔴 **`[Tooltip].prefix` 走 `FormatCleaner.finishKeepTrailing()`，不是 `finish()`**：`finish()` 末尾有 `trim()`，
+  会把 prefix 末尾那个**刻意写的分隔符空格**裁掉（`[生存]发送时间: …` 黏一起）。消息主格式末尾的空格没意义，
+  所以主格式照旧用 `finish()`。空变量留下的残渣空格由哨兵那套吸收，不需要 trim 兜。
   它要 adventure + toml4j + gson 才能跑（**不能**只给 target/classes）：
   ```
   # classpath：仓库 target/classes + ~/.m2 里的 velocity-api、adventure-{api,key,

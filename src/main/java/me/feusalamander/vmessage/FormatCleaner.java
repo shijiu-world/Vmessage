@@ -155,6 +155,22 @@ public final class FormatCleaner {
      * </ul>
      */
     public static String collapse(final String s) {
+        return collapse(s, false);
+    }
+
+    /**
+     * 同上，但可以选择【保留末尾的空格】。
+     *
+     * <p>⚠️ 只有 {@code [Tooltip].prefix} 需要这个：前缀是直接拼在 {@code hover} 前面的，
+     * 末尾那个空格是服主**刻意写的分隔符**（{@code "&8[&6#server#&8] "}），
+     * 一刀 trim 掉就会黏成 {@code [生存]发送时间: ...}。
+     * 消息主格式末尾的空格没有意义，所以默认还是 trim。
+     *
+     * <p>只收开头、不收结尾是有意的 —— 开头那个空格基本都是「前面的段空了」留下的残渣，
+     * 结尾那个是分隔符。至于「末尾紧接着一个空变量」的情况（{@code "] %title%"} 且称号为空），
+     * 空格在 ④ 步就被哨兵吸收掉了，不需要 trim 来兜。
+     */
+    public static String collapse(final String s, final boolean keepTrailing) {
         if (s == null) {
             return "";
         }
@@ -167,12 +183,19 @@ public final class FormatCleaner {
         t = HOLE_BETWEEN.matcher(t).replaceAll(" ");
         t = HOLE_ANY.matcher(t).replaceAll("");
         // 段全空时开头会剩一个空格（CMI 格式里 %playerTitle_use% 就是第一个字符）
-        return t.trim();
+        return keepTrailing ? t.stripLeading() : t.trim();
     }
 
     /** 抹占位符 + 折叠空格，一条龙。只在 #message# 替换之前调用。 */
     public static String finish(final String s) {
-        return collapse(stripUnresolved(resolveMarks(s)));
+        return collapse(stripUnresolved(resolveMarks(s)), false);
+    }
+
+    /**
+     * 同上，但保留末尾空格。给 {@code [Tooltip].prefix} 用 —— 详见 {@link #collapse(String, boolean)}。
+     */
+    public static String finishKeepTrailing(final String s) {
+        return collapse(stripUnresolved(resolveMarks(s)), true);
     }
 
     /**
