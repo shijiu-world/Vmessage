@@ -124,7 +124,7 @@ await-cancel-servers = []
 # ★ 悬停 / 点击：鼠标放到消息上时显示提示；点一下有动作
 #
 # 转发的聊天分两段，效果不一样：
-#   前缀 + 名字（#message# 以外的部分）  → 悬停显示 hover（发送时间），点一下把 suggest 填进聊天框
+#   前缀 + 名字（#message# 以外的部分）  → 悬停显示 prefix + hover（发送时间），点一下把 suggest 填进聊天框
 #   正文（玩家真正说的那句话，#message#）→ 悬停显示 copy-hover，点一下把这句话复制到剪贴板
 # Join/Leave/Kick 那些广播 → 只显示 hover，**不做点击**（广播没有「给谁发消息」的含义）
 #
@@ -133,12 +133,13 @@ await-cancel-servers = []
 #   {player} 发送者名字（广播里就是那条广播的主角）
 #   {server} 发送者所在子服（走 [Aliases] 别名，例如「净土」）
 #
-# ★ prefix：悬停提示前面再加一截固定内容（默认留空 = 不加）
+# ★ prefix：悬停提示前面再加一截（默认先亮一个 [服务器名]；留空 = 不加）
 #   ⚠️ 只加在【跨服聊天】上 —— Join/Leave/Kick 那些广播的提示里不会出现它
 #   里面可以写（跟 Message.format 同一批解析，按【发送者所在服】算）：
 #     #server#  /  #player#  /  #prefix#  /  #suffix#  /  [Custom-Meta] 定义的
 #     %xxx%     子服 PAPI 变量（需要装 PAPIProxyBridge，例如 %playerTitle_use%）
 #   例：prefix = "&8[&b#server#&8] &7来自 &f%playerTitle_use%&7"
+#   ⚠️ 老配置里没有这个键时按「不加」处理（不会凭空多出一截），想要就自己加一行
 #
 # hover 留空 = 不显示提示；suggest 留空 = 点了没反应
 [Tooltip]
