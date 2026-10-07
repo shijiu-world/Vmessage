@@ -57,20 +57,21 @@ public final class ChatColors {
     /**
      * 裸 hex {@code #RRGGBB}（前面不带 {@code &}）—— 玩家最常打出来的写法，等价于 {@code &#RRGGBB}。
      *
-     * <p>⚠️ 两边的断言都不能省：
-     * <ul>
-     *   <li>{@code (?<![&§{])} —— {@code &#FF0000} 里的 {@code #} 不能再补一个 {@code &}（会变成
-     *       {@code &&#FF0000}，前面多出一个字面的 {@code &}）；{@code {#FF0000}} 是 CMI 的花括号写法，
-     *       上面几步已经处理掉了，这里必须放过，不能把 {@code &#} 插进花括号里把写法搅坏。</li>
-     *   <li>{@code (?![0-9a-fA-F])} —— {@code #FF0000AA}（8 位带 alpha）、{@code #1234567} 这类
-     *       更长的串不是颜色码，整段留给纯文本，别吃掉前 6 位再漏一个尾巴。</li>
-     * </ul>
+     * <p>⚠️ {@code (?<![&§{])} 不能省 —— {@code &#FF0000} 里的 {@code #} 不能再补一个 {@code &}
+     * （会变成 {@code &&#FF0000}，前面多出一个字面的 {@code &}）；{@code {#FF0000}} 是 CMI 的花括号写法，
+     * 上面几步已经处理掉了，这里必须放过，不能把 {@code &#} 插进花括号里把写法搅坏。
+     *
+     * <p>📌 <b>尾部刻意不加 {@code (?![0-9a-fA-F])}</b>：早期版本加过，用来防 {@code #FF0000AA}
+     * （8 位带 alpha）。但代价是 {@code #00ff001}「绿字 1」、{@code #FF0000abc} 这类
+     * <b>颜色码后面直接跟数字 / 字母</b>的写法全部失效 —— 而这才是玩家真正会打出来的写法
+     * （实测日志里全是 {@code #00ff001}、{@code #FF00001}）。MC 只支持 6 位 RGB，
+     * 7 位以上的纯 hex 串在聊天里几乎不会出现，误伤风险远小于漏解析。
      *
      * <p>⚠️ 只认 6 位，故意不支持裸的 {@code #RGB}：中文聊天里 {@code #666}「666」是高频网络用语，
      * 3 位裸 hex 的误伤率太高。带 {@code &} 的 {@code &#F00} 本来就不歧义，照旧支持。
      */
     private static final Pattern BARE_HEX_6 =
-            Pattern.compile("(?<![&§{])#([0-9a-fA-F]{6})(?![0-9a-fA-F])");
+            Pattern.compile("(?<![&§{])#([0-9a-fA-F]{6})");
 
     /** 渐变标记本身：{@code {#A>}} / {@code {#B<}} / {@code {#B<>}} —— 没有渐变权限时只摘这两个标记，文字留下 */
     private static final Pattern GRADIENT_MARKER = Pattern.compile("\\{#[^\\{\\}]*?[<>][>]?\\}");
@@ -86,7 +87,8 @@ public final class ChatColors {
                     + "|\\{#[A-Za-z0-9_]*\\}"                 // {#RRGGBB} {#RGB} {#名字}
                     // ⚠️ 裸 hex 一定放最后：前面那些带 & / {} 的写法必须先被吃掉，
                     //    否则 #FF0000 会被当成裸色先摘掉，留下一个孤零零的 & 或 {
-                    + "|(?<![&§{])#[0-9a-fA-F]{6}(?![0-9a-fA-F])");
+                    // 📌 与 BARE_HEX_6 保持一致：尾部不限制后面跟什么，#00ff001 也要能摘
+                    + "|(?<![&§{])#[0-9a-fA-F]{6}");
 
     private ChatColors() {
     }
