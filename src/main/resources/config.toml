@@ -50,7 +50,7 @@ papiproxybridge = true
 # 子服没装 PAPIProxyBridge-Bukkit 时，转发的格式
 # 里面只能写 Vmessage 自己的占位符
 # 不解析 %xxx%。若留空则使用 format。
-no-papi-format = "<#player#>: #message#"
+no-papi-format = "<#player#> #message#"
 
 # 装了 PAPIProxyBridge-Bukkit 的服务器列表
 # velocity.toml 里注册的服务器名（不是 [Aliases] 的中文别名），大小写不敏感
@@ -86,6 +86,8 @@ gradient-permission = "vmessage.gradient"
 # parse 模式支持的写法（对齐 CMI/CMILib 的 CMIChatColor）：
 #   &4  &c  &l  &r ...        传统 16 色 + k/l/m/n/o/r
 #   &#FF0000  &#F00           hex（3 位会自动展开成 6 位）
+#   #FF0000                   裸 hex —— 前面不写 & 也认（只认 6 位；
+#                             3 位的 #666 会被当成网络用语放过，想用简写请写 &#F00）
 #   &x&F&F&0&0&0&0            1.16 原生 hex 写法，会转成 &#FF0000
 #   {#FF0000}  {#F00}         CMI 的花括号 hex
 #   {#brown}                  命名色 —— 查下面那张表，查不到就摘掉

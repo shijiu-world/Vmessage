@@ -29,7 +29,7 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 | `VMessage.java` | 262 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
 | `Listeners.java` | ~590 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑；`broadcast()` 是五档广播的统一出口 | 动这里等于动整个插件行为，必看下面「数据流」 |
 | `Configuration.java` | 705 | 全部配置项读取。用 `com.moandjiezana.toml.Toml`（tomlj）解析 | 加配置要同时改 `config.toml` 默认值 + README 表格 |
-| `ChatColors.java` | 278 | 颜色归一化：CMI 全系语法（`&x&F&F...`、3位hex、`{#F00}`、命名色、渐变） | 渐变是「抠哨兵 → 逐字染色 → 插回」 |
+| `ChatColors.java` | ~300 | 颜色归一化：CMI 全系语法（`&x&F&F...`、3位hex、裸 `#RRGGBB`、`{#F00}`、命名色、渐变） | 渐变是「抠哨兵 → 逐字染色 → 插回」 |
 | `FormatCleaner.java` | ~200 | 清理空段：`[&6%guild%&r]` 取不到值时连括号删掉；**PAPI 变量解析成功但值为空**时也要删（靠 mark/resolveMarks 记边界） | ⚠️ 靠哨兵机制，**不能折叠连续空格**（称号值里有空格）；只删紧贴哨兵**左侧**的颜色码 |
 | `Linkify.java` | 96 | 网址 → 可点击 `[链接]` | 正则用 RFC3986 字符集，**不是** `https?://\S+`（中文无空格会吃整句） |
 | `Suppression.java` | 188 | 收子服「这条聊天被取消了」信号，命中则整条丢弃 | 通道 `vmessage:suppress`，配套 `VmessageSuppress` 插件 |
@@ -147,6 +147,15 @@ Listeners.message()
     老键 `no-papi-servers` / `read-bridge-blacklist` 只在 `warnRenamedKeys()` 里提示一句，
     **不参与计算** —— 黑名单转白名单要先知道「全部服有哪些」，配置阶段拿不到。
     （`PapiBlacklist.java` 已随 `read-bridge-blacklist` 一起删掉。）
+18. 🔴 **裸 hex `BARE_HEX_6` 的两个断言一个都不能拆，而且在 `STRIP` 里必须排最后**：
+    `(?<![&§{])` —— 没有它，`&#FF0000` 会被二次加 `&` 变成 `&&#FF0000`（多一个字面 `&`），
+    `{#FF0000}` 也会被插进一个 `&#` 把 CMI 写法搅坏；`(?![0-9a-fA-F])` —— 没有它，
+    `#FF0000AA`（8 位带 alpha）会被吃掉前 6 位、漏一个尾巴。
+    `STRIP` 里裸 hex 放在所有带 `&`/`{}` 的分支**之后**，否则 `#FF0000` 先被摘掉、留下孤零零的 `&` 或 `{`。
+    ⚠️ **只认 6 位，故意不做裸 `#RGB`**：中文聊天里 `#666`「666」是高频网络用语，误伤太大；
+    要简写请写 `&#F00`（带 `&` 本来就没歧义，照旧支持）。
+    ⚠️ `normalize()` 里裸 hex 是**最后一步**（`&#RRGGBB` / `{#RRGGBB}` 都已在前面变成 `&#RRGGBB`），
+    顺序调换了就会重复加 `&`。
 
 ---
 
