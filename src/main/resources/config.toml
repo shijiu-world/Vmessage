@@ -133,9 +133,17 @@ await-cancel-servers = []
 #   {player} 发送者名字（广播里就是那条广播的主角）
 #   {server} 发送者所在子服（走 [Aliases] 别名，例如「净土」）
 #
+# ★ prefix：悬停提示前面再加一截固定内容（默认留空 = 不加）
+#   ⚠️ 只加在【跨服聊天】上 —— Join/Leave/Kick 那些广播的提示里不会出现它
+#   里面可以写（跟 Message.format 同一批解析，按【发送者所在服】算）：
+#     #server#  /  #player#  /  #prefix#  /  #suffix#  /  [Custom-Meta] 定义的
+#     %xxx%     子服 PAPI 变量（需要装 PAPIProxyBridge，例如 %playerTitle_use%）
+#   例：prefix = "&8[&b#server#&8] &7来自 &f%playerTitle_use%&7"
+#
 # hover 留空 = 不显示提示；suggest 留空 = 点了没反应
 [Tooltip]
 enabled = true
+prefix = "&8[&6#server#&8] "
 hover = "&e发送时间: &6{time}"
 # suggest 末尾留一个空格，玩家点完接着就能输入内容
 suggest = "/msg {player} "

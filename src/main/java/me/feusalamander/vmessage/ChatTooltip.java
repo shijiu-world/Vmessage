@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>三档挂载点，各有各的效果（adventure 里**子节点自己设过的事件优先**，不会继承父的）：
  * <ol>
- *   <li>聊天的**整条**（根组件）：悬停 = 发送时间，点击 = 填命令；{@link #apply(Component, Configuration, String, String)}</li>
+ *   <li>聊天的**整条**（根组件）：悬停 = 前缀 + 发送时间，点击 = 填命令；
+ *       {@link #apply(Component, Configuration, String, String, String)}</li>
  *   <li>聊天的**正文**（#message# 那一截）：悬停 = 复制提示，点击 = 复制到剪贴板；
  *       它自己设了事件，所以**不会**继承根上的「发送时间 / 填 /msg」；{@link #copy(Component, Configuration, String)}</li>
  *   <li>五类广播的整条：**只要悬停，不要点击**（广播没有「给谁发消息」的含义）；
@@ -44,6 +45,11 @@ public final class ChatTooltip {
 
     /** 悬停提示的默认值：&e发送时间: &6{time} */
     static final String DEFAULT_HOVER = "&e发送时间: &6{time}";
+    /**
+     * 悬停提示前面那截固定前缀的默认值：空串 = 不额外加东西（保持老样子）。
+     * ⚠️ 只有【跨服聊天】会加，五档广播一律不加 —— 广播里再挂一截服务器/称号前缀只会更乱。
+     */
+    static final String DEFAULT_PREFIX = "";
     /** 点击填入聊天框的命令默认值（末尾留一个空格，玩家接着就能输入内容）。 */
     static final String DEFAULT_SUGGEST = "/msg {player} ";
     /** {time} 默认按 24 小时制的 时:分:秒 显示。 */
@@ -57,11 +63,14 @@ public final class ChatTooltip {
     }
 
     /**
-     * 这个功能当不当 effective：总开关开着，且 hover / suggest 里至少有一个写了东西。
+     * 这个功能当不当 effective：总开关开着，且 hover / suggest / prefix 里至少有一个写了东西。
+     *
+     * <p>prefix 也算子：只配了前缀（hover、suggest 都留空）时，提示里至少还得看得见前缀那一行。
      */
     static boolean enabled(final Configuration cfg) {
         return cfg != null && cfg.isTooltipEnabled()
-                && (hasText(cfg.getTooltipHover()) || hasText(cfg.getTooltipSuggest()));
+                && (hasText(cfg.getTooltipHover()) || hasText(cfg.getTooltipSuggest())
+                    || hasText(cfg.getTooltipPrefix()));
     }
 
     /** 正文的「复制」这一档当不当生效：总开关 + copy 开关都开着。 */
@@ -79,26 +88,43 @@ public final class ChatTooltip {
      */
     static Component apply(final Component message, final Configuration cfg,
                            final String player, final String server) {
-        return decorate(message, cfg, player, server, true);
+        return apply(message, cfg, player, server, null);
+    }
+
+    /**
+     * 同上，但悬停提示前面再加一截固定前缀（{@code Tooltip.prefix}）。
+     *
+     * <p>⚠️ <b>只有跨服聊天走这一档</b> —— 五档广播走 {@link #applyHover}，那里传不了前缀，
+     * 广播的提示里永远不会有它（「XX 加入了服务器」前面顶一截称号/服务器名没有意义）。
+     *
+     * @param prefix 已经把 {@code #server#} / {@code %xxx%} 换成真值的前缀串
+     *               （{@code Listeners.message} 里跟消息格式同一批解析出来的）；null / 空串 = 不加
+     */
+    static Component apply(final Component message, final Configuration cfg,
+                           final String player, final String server, final String prefix) {
+        return decorate(message, cfg, player, server, true, prefix);
     }
 
     /**
      * 五类广播用这一档：**只挂悬停，不挂点击** —— 广播里没有「给谁发消息」的含义，
      * 点一下填 /msg 只会让人莫名其妙（尤其是 Leave / Kick 那些人已经不在线了）。
+     * 也不加 {@code Tooltip.prefix}。
      */
     static Component applyHover(final Component message, final Configuration cfg,
                                 final String player, final String server) {
-        return decorate(message, cfg, player, server, false);
+        return decorate(message, cfg, player, server, false, null);
     }
 
     private static Component decorate(final Component message, final Configuration cfg,
                                       final String player, final String server,
-                                      final boolean withClick) {
+                                      final boolean withClick, final String prefix) {
         // enabled() 里已经把「开关 + 有没有内容」都判过了 —— 单独调用时也要认这个开关
         if (message == null || !enabled(cfg)) {
             return message;
         }
-        final String hover = cfg.getTooltipHover();
+        // 前缀直接拼在 hover 前面：一起做 & 反序列化、一起过 fill()，
+        // 所以前缀里也能写 {time} / {player} / {server}（虽然 #server# 更常用）
+        final String hover = (prefix == null ? "" : prefix) + cfg.getTooltipHover();
         final String suggest = withClick ? cfg.getTooltipSuggest() : "";
         if (!hasText(hover) && !hasText(suggest)) {
             return message;

@@ -24,7 +24,7 @@ Velocity 代理端插件。玩家在任意子服说话 → 代理按统一格式
 
 | 文件 | 行 | 职责 | 动它之前先想清楚 |
 |---|---|---|---|
-| `ChatTooltip.java` | ~165 | 挂悬停提示（发送时间）+ 点击填命令（`/msg`）。聊天与五档广播共用 | 事件挂在**根组件**上往下继承；消息里的 [链接] 有自己的 openUrl/hover，优先级更高不会被抢 |
+| `ChatTooltip.java` | ~200 | 挂悬停提示（`prefix` + 发送时间）+ 点击填命令（`/msg`）。聊天与五档广播共用 | 事件挂在**根组件**上往下继承；消息里的 [链接] 有自己的 openUrl/hover，优先级更高不会被抢。🔴 `prefix` 只从 `apply(...,prefix)` 这条进来，广播的 `applyHover` 传 null |
 | `BuildConstants.java`（⚠️在 `src/main/java-templates/`，**构建时生成**，别手改） | 21 | 唯一一个常量：`VERSION`，等于 pom 的 `<version>` | `@Plugin` 要编译期常量，没法写 `${project.version}`；以前硬编码导致产物里的版本号永远是旧值 |
 | `VMessage.java` | 262 | 主类。`@Inject` 拿 `ProxyServer`/`Logger`/`Metrics.Factory`/`@DataDirectory`，注册监听器、命令、自动重载调度 | 命令名在这里注册（**小写 `/vmessage`**，大写只做别名） |
 | `Listeners.java` | ~590 | **核心**。聊天/进出服/切服/踢人的全部转发逻辑；`broadcast()` 是五档广播的统一出口 | 动这里等于动整个插件行为，必看下面「数据流」 |
@@ -75,10 +75,22 @@ PlayerChatEvent (Listeners.onMessage)
 
 | 位置 | 悬停 | 点击 | 挂载点 |
 |---|---|---|---|
-| 聊天整条（= 前缀+名字那一段） | `Tooltip.hover` 发送时间 | `Tooltip.suggest` 填命令 | `ChatTooltip.apply()` ← `deliver()` |
+| 聊天整条（= 前缀+名字那一段） | `Tooltip.prefix` + `Tooltip.hover` 发送时间 | `Tooltip.suggest` 填命令 | `ChatTooltip.apply(...,prefix)` ← `deliver()` |
 | 聊天正文 `#message#` | `Tooltip.copy-hover` | 复制到剪贴板 | `ChatTooltip.copy()` ← `build()` |
 | 正文里的「[链接]」 | `[Link].hover` 网址 | **打开浏览器** | `Linkify` 自己做，复制档**逐节点跳过**它 |
-| 五档广播 | `Tooltip.hover` | **无** | `ChatTooltip.applyHover()` ← `broadcast()` |
+| 五档广播 | `Tooltip.hover`（🔴**不加 prefix**） | **无** | `ChatTooltip.applyHover()` ← `broadcast()` |
+
+**`Tooltip.prefix` 的解析链路**（只有跨服聊天有）：
+
+```
+Listeners.message()
+  ↓ prepare() 换掉 #server# / #player# / LP meta（跟主 format 同一批）
+  ↓ 含 %xxx% → PapiBridge.format() 异步解析（⚠️ 与主 format **分开**两次调用，
+  ↓            不拼成一个串——PAPI 的返回值里可能有分隔符，拆不回来）
+  ↓ FormatCleaner.finish() 收尾（§→&、空段折叠）
+  ↓ deliver(..., tooltipPrefix)
+  ↓ ChatTooltip.apply(..., prefix)：prefix 直接拼在 hover 前面 → 一起 LEGACY 反序列化 → 一起过 fill()
+```
 
 ---
 
@@ -117,6 +129,13 @@ PlayerChatEvent (Listeners.onMessage)
     总闸 `[Broadcast].enabled` 和悬停/点击都挂在这一层，绕过去就会漏。
 13. 📌 **升版本号只改 `pom.xml` 一处**：`@Plugin(version = BuildConstants.VERSION)`，
     `BuildConstants` 由 `src/main/java-templates/` 生成。**别把字面量写回注解里**。
+14. 🔴 **`Tooltip.prefix` 只属于跨服聊天**：它是在 `Listeners.message()` 里跟主格式同一批解析、
+    再由 `deliver()` 传给 `ChatTooltip.apply()` 的。五档广播走 `broadcast()` → `applyHover()`，
+    那条路**根本没有前缀参数** —— 想「顺手让广播也带前缀」必须改挂载点，别在 `applyHover`
+    里偷偷读 `cfg.getTooltipPrefix()`（那是刻意的设计：广播里顶一截称号/服务器名没有意义）。
+15. 📌 **`prefix` 与主格式要分开调 `PapiBridge`**：两者是不同的模板串，不能先拼一个串再按
+    分隔符拆（PAPI 的返回值里完全可能出现那个分隔符）。没含 `%` 的那一路直接给
+    `CompletableFuture.completedFuture`，别多跑一趟桥接。
 
 ---
 
@@ -127,7 +146,8 @@ PlayerChatEvent (Listeners.onMessage)
 | 加一个配置项 | `Configuration.java` + `src/main/resources/config.toml` | README 的配置表格、起服日志里的 `reportConfig` |
 | 加一个占位符 | `Listeners.java` 的 `BUILTIN` 集合 + 替换逻辑 | 内建名不能当 meta 键查 |
 | 消息格式相关 | `Listeners.java` 的 `message()` | 只此一路，改格式串只影响游戏内显示 |
-| 悬停提示 / 点击填命令 | `ChatTooltip.java`；三个挂载点：`Listeners.deliver()`（整条聊天）、`Listeners.build()` 里的正文 `#message#`、`Listeners.broadcast()`（五档广播） | 🔴 **子节点自己设过事件就不继承父的**：正文挂了复制档，所以不再继承整条的「时间 + /msg」；正文里的 [链接] 又盖过正文。广播只走 `applyHover`（不挂点击） |
+| 悬停提示 / 点击填命令 | `ChatTooltip.java`；三个挂载点：`Listeners.deliver()`（整条聊天）、`Listeners.build()` 里的正文 `#message#`、`Listeners.broadcast()`（五档广播） | 🔴 **子节点自己设过事件就不继承父的**：正文挂了复制档，所以不再继承整条的「时间 + /msg」；正文里的 [链接] 又盖过正文。广播只走 `applyHover`（不挂点击、**不加 prefix**） |
+| 悬停前缀 `Tooltip.prefix` | `Configuration.getTooltipPrefix()`（存模板）→ `Listeners.message()` 里 `prepare()` + `PapiBridge` 解析 → `deliver(...,tooltipPrefix)` → `ChatTooltip.apply` | 🔴 前缀与主格式**分开**两次 PAPI 调用（不能拼一个串再拆）；含 `%` 才走异步。广播不走这条路 |
 | 颜色/渐变语法 | `ChatColors.java` | VWhisper 有一份**同源但独立**的 `ChatColors`，改语法两边都要改 |
 | 网址识别 | `Linkify.java` 的 `pattern` | 默认值在 `config.toml` 的 `[Link]` |
 | 子服参与名单 | `Configuration.buildNoPapiServers` / `isChatServerAllowed` | 白名单配成空 = 全服断流，要打 WARN |
@@ -151,7 +171,7 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
   ```
   ⚠️ 用 PowerShell 跑，别用 Git Bash（会把 `-cp` 里的 `D:/...` 做路径转换 → 找不到主类）。
   断言比的是「剥掉颜色码之后玩家看到的文本」，不是原始串 —— 多余空格是视觉问题，`&r` 会干扰比对。
-- `ChatTooltip` 也有一份独立的测试台：`D:\game\Server\.workbuddy\vmessage\TooltipTest.java`（29 条断言）。
+- `ChatTooltip` 也有一份独立的测试台：`D:\game\Server\.workbuddy\vmessage\TooltipTest.java`（74 条断言）。
   它要 adventure + toml4j + gson 才能跑（**不能**只给 target/classes）：
   ```
   # classpath：仓库 target/classes + ~/.m2 里的 velocity-api、adventure-{api,key,

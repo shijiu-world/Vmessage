@@ -210,16 +210,17 @@ survival = "净土"
 
 | 鼠标放在哪 | 悬停显示 | 点一下 |
 |---|---|---|
-| 转发聊天的**前缀 + 名字**（`#message#` 以外的部分） | `hover`（默认发送时间） | 把 `suggest` **填进聊天框**（不是直接发出去） |
+| 转发聊天的**前缀 + 名字**（`#message#` 以外的部分） | `prefix` + `hover`（默认发送时间） | 把 `suggest` **填进聊天框**（不是直接发出去） |
 | 转发聊天的**正文**（`#message#`，玩家真正说的那句话） | `copy-hover`（默认「复制该文本」） | 把这句话**复制到剪贴板** |
 | 正文里的「[链接]」 | **网址提示**（`[Link].hover`） | **打开浏览器**（`[Link]` 自己的行为，不受三档影响） |
-| 五档广播（Join/Leave/Kick/Disconnect/Server-change） | `hover` | **不响应**（广播没有「给谁发消息」的含义） |
+| 五档广播（Join/Leave/Kick/Disconnect/Server-change） | `hover`（**不加 `prefix`**） | **不响应**（广播没有「给谁发消息」的含义） |
 
 广播里的 `{player}` 就是那条广播的主角。
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
 | `enabled` | `true` | 总开关；`false` 时三档都不挂 |
+| `prefix` | `""` | 悬停文本前面再加一截 —— **只加在跨服聊天上，广播不加**；留空 = 不加。详见下面 |
 | `hover` | `"&e发送时间: &6{time}"` | 前缀/名字（以及广播）上的悬停文本；**留空 = 不显示提示** |
 | `suggest` | `"/msg {player} "` | 点前缀/名字时填入聊天框的命令；**留空 = 点了没反应** |
 | `copy` | `true` | 正文的「悬停 + 点一下复制」开关；`false` = 正文恢复成跟前后一样（悬停看时间、点一下填命令） |
@@ -234,6 +235,26 @@ survival = "净土"
 | `{time}` | 这条消息的发送时刻（按 `time-format` / `time-zone` 渲染） |
 | `{player}` | 发送者名字 |
 | `{server}` | 发送者所在子服，走 `[Aliases]` 别名（例如「净土」） |
+
+#### `prefix` —— 悬停文本前面再加一截（只给跨服聊天加）
+
+想在悬停里先亮一行「来自哪个服 / 什么称号」，就写在 `prefix` 里：
+
+```toml
+[Tooltip]
+prefix = "&8[&b#server#&8] &7来自 &f%playerTitle_use% "
+hover  = "&e发送时间: &6{time}"
+```
+
+- 🔴 **只加在跨服聊天上** —— Join/Leave/Kick/Disconnect/Server-change 五档广播的悬停里
+  **不会出现** `prefix`（「XX 加入了服务器」前面顶一截称号/服务器名没有意义）。
+- 里面可以写**消息格式那一套**（跟 `Message.format` 同一批解析、都按**发送者所在服**计算）：
+  `#server#` / `#player#` / `#prefix#` / `#suffix#` / `[Custom-Meta]` 定义的，
+  以及 `%xxx%` 子服 PAPI 变量（需要装 PAPIProxyBridge）。
+  同一条消息里 `prefix` 和 `format` 是分别解析的，互不干扰。
+- 顺带也认 `{time}` / `{player}` / `{server}`（前缀是拼进 `hover` 之后一起填的）。
+- ⚠️ **直接拼在 `hover` 前面，不会自动加分隔符** —— 想换行或空格就自己写在末尾。
+- 留空（默认）= 不加，行为跟加这个功能之前完全一样。
 
 几点说明：
 
@@ -484,6 +505,13 @@ PAPI 缓存的键是「(发送者 UUID, 目标 UUID, 所在服名) + format 模�
 不会显示「复制该文本」，点击也不会去复制。
 （本来也可以只靠 adventure「子节点优先」的继承规则，但链接有时会被包一层空节点，
 那层空根自己是没事件的，靠继承就保不住了。）
+
+### 19. 悬停文本也能加前缀（只给跨服聊天加）
+
+`[Tooltip].prefix`：悬停提示前面再拼一截自定义内容，支持 `#server#` / `#player#` 和
+`%xxx%` 子服 PAPI 变量（跟 `Message.format` 同一批、按发送者所在服解析）。
+🔴 **五档广播不加前缀** —— 广播走的是另一档挂载点（`ChatTooltip.applyHover`），
+根本传不进前缀，所以 Join/Leave/Kick 那些提示里永远只有 `hover` 那一行。
 
 ---
 

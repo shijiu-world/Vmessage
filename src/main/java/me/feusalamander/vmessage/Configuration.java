@@ -116,6 +116,12 @@ public final class Configuration {
     private volatile boolean tooltipEnabled = true;
     /** 悬停提示；支持 {time} {player} {server}，留空则不显示提示。 */
     private volatile String tooltipHover = ChatTooltip.DEFAULT_HOVER;
+    /**
+     * 悬停提示前面那截固定前缀（{@code Tooltip.prefix}）：只有跨服聊天加，五档广播不加。
+     * 串里可以写 {@code #server#} / {@code #player#} 和 {@code %xxx%}（子服 PAPI 变量），
+     * 由 {@code Listeners} 在发消息前跟消息格式同一批解析；这里存的是**还没解析**的模板。
+     */
+    private volatile String tooltipPrefix = ChatTooltip.DEFAULT_PREFIX;
     /** 点击时填入聊天框的命令；支持同样的三个占位符，留空则不响应点击。 */
     private volatile String tooltipSuggest = ChatTooltip.DEFAULT_SUGGEST;
     /** {time} 的时间格式（Java 的 DateTimeFormatter 写法）。 */
@@ -249,6 +255,9 @@ public final class Configuration {
         // 留空 = 不做这一项（hover 空 = 不显示提示；suggest 空 = 点了没反应）
         final String newTooltipHover = strOrEmpty(
                 config.getString("Tooltip.hover", ChatTooltip.DEFAULT_HOVER));
+        // 悬停提示的前缀：留空 = 不加（老配置没有这个键时也是空，行为不变）
+        final String newTooltipPrefix = strOrEmpty(
+                config.getString("Tooltip.prefix", ChatTooltip.DEFAULT_PREFIX));
         final String newTooltipSuggest = strOrEmpty(
                 config.getString("Tooltip.suggest", ChatTooltip.DEFAULT_SUGGEST));
         // 时间格式 / 时区写错都只退回默认值，不能让别处的配置跟着失效
@@ -332,6 +341,7 @@ public final class Configuration {
 
         tooltipEnabled = newTooltipEnabled;
         tooltipHover = newTooltipHover;
+        tooltipPrefix = newTooltipPrefix;
         tooltipSuggest = newTooltipSuggest;
         tooltipTimeFormat = newTooltipTimeFormat;
         tooltipZone = newTooltipZone;
@@ -698,6 +708,14 @@ public final class Configuration {
     /** 悬停提示；支持 {time} {player} {server}，留空 = 不显示提示。 */
     public String getTooltipHover() {
         return this.tooltipHover;
+    }
+    /**
+     * 悬停提示前面那截固定前缀（**只有跨服聊天加，五档广播不加**）。
+     * 支持 {@code #server#} / {@code #player#} 等内建占位符和 {@code %xxx%} 子服 PAPI 变量；
+     * 留空 = 不额外加东西。返回的是**模板**，解析在 {@code Listeners} 里做。
+     */
+    public String getTooltipPrefix() {
+        return this.tooltipPrefix;
     }
     /** 点击时填入聊天框的命令；留空 = 点了没反应。 */
     public String getTooltipSuggest() {

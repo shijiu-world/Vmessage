@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 @SuppressWarnings({"UnstableApiUsage", "deprecation"})
@@ -478,21 +479,38 @@ public final class Listeners {
         final boolean permission = p.hasPermission("vmessage.minimessage");
         final String main = mainFormat.isEmpty() ? "" : prepare(mainFormat, p, actualservername);
         final String alt = altFormat == null ? main : prepare(altFormat, p, actualservername);
+        // 悬停提示的前缀（[Tooltip].prefix）：#server# / #player# 这些内建位在这里先换掉，
+        // %xxx% 下面跟消息格式同一批送去解析 —— 两者都在【发送者所在服】算，口径跟消息一致。
+        // ⚠️ 留空就直接是空串，后面不必再判一次「有没有配前缀」。
+        final String rawPrefix = configuration.getTooltipPrefix();
+        final String prefix = rawPrefix == null || rawPrefix.isEmpty()
+                ? "" : prepare(rawPrefix, p, actualservername);
         // PAPIProxyBridge：把 %xxx% 交给玩家【所在子服】的 PlaceholderAPI 解析（异步）。
         // 这一步在 #message# 替换【之前】做 —— 玩家输入的聊天内容不会被当成占位符解析。
         final PapiBridge papi = VMessage.papi();
-        if (papi != null && configuration.isPapiEnabled() && main.indexOf('%') >= 0) {
+        final boolean papiOn = papi != null && configuration.isPapiEnabled();
+        if (papiOn && (main.indexOf('%') >= 0 || prefix.indexOf('%') >= 0)) {
             // ⚠️ 先给 %xxx% 套边界标记再送去过桥接：变量【解析成功但值是空串】时，
             //    字符串里已经没有 %xxx% 了，只有标记还能指出"这一段是个变量、现在空了"，
             //    finish() 才能把它两侧多余的空格收掉（否则 [生存]  [无公会] 两个空格）。
-            papi.format(FormatCleaner.mark(main), p.getUniqueId()).thenAccept(resolved ->
+            // ⚠️ 主格式和前缀分开解析：两者是不同的模板串，塞进一个串里再拆会拆错
+            //    （PAPI 的返回值里完全可能有分隔符）。没有 % 的那一路直接给个已完成的 future，不多跑一趟。
+            final CompletableFuture<String> mainFuture = main.indexOf('%') >= 0
+                    ? papi.format(FormatCleaner.mark(main), p.getUniqueId())
+                    : CompletableFuture.completedFuture(main);
+            final CompletableFuture<String> prefixFuture = prefix.indexOf('%') >= 0
+                    ? papi.format(FormatCleaner.mark(prefix), p.getUniqueId())
+                    : CompletableFuture.completedFuture(prefix);
+            mainFuture.thenAcceptBoth(prefixFuture, (resolvedMain, resolvedPrefix) ->
                     // PAPI 返回的是 § 码，而 Vmessage 用 & 序列化
-                    deliver(p, FormatCleaner.finish(resolved.replace('§', '&')),
-                            FormatCleaner.finish(alt), m, permission, actualservername));
+                    deliver(p, FormatCleaner.finish(resolvedMain.replace('§', '&')),
+                            FormatCleaner.finish(alt), m, permission, actualservername,
+                            FormatCleaner.finish(resolvedPrefix.replace('§', '&'))));
             return;
         }
         // 没装桥接 / 手动关掉时也要清一遍，否则 format 里的 %xxx% 会原样显示给玩家
-        deliver(p, FormatCleaner.finish(main), FormatCleaner.finish(alt), m, permission, actualservername);
+        deliver(p, FormatCleaner.finish(main), FormatCleaner.finish(alt), m, permission,
+                actualservername, FormatCleaner.finish(prefix));
     }
 
     /**
@@ -501,9 +519,12 @@ public final class Listeners {
      * @param mainFormat 已经解析完的常规格式（可能含 PAPI 结果），还留着 #message# 没替换
      * @param altFormat  已经解析完的备用格式（从未走 PAPI），给黑名单里的子服用；与主格式相同时就是同一个串
      * @param senderLabel 发送者所在子服的显示名（走 [Aliases] 别名），给悬停提示的 {server} 用
+     * @param tooltipPrefix 已经解析好的悬停前缀（[Tooltip].prefix），空串 = 不加；
+     *                      ⚠️ 只给跨服聊天加 —— 五档广播走 {@link #broadcast}，根本到不了这里
      */
     private void deliver(final Player p, final String mainFormat, final String altFormat,
-                         final String m, final boolean permission, final String senderLabel) {
+                         final String m, final boolean permission, final String senderLabel,
+                         final String tooltipPrefix) {
         final boolean mini = configuration.isMinimessageEnabled();
         // 玩家聊天内容里的颜色码怎么处理；有 vmessage.color 权限的人一律解析
         final String colorMode = p.hasPermission(COLOR_PERMISSION) ? "parse" : configuration.getMessageColors();
@@ -548,7 +569,7 @@ public final class Listeners {
             //    这时再给发送者自己挂上 /msg 自己，纯粹是添乱。
             final boolean toSender = all && Objects.equals(sender, server.getServerInfo());
             server.sendMessage(tooltip && !toSender
-                    ? ChatTooltip.apply(target, configuration, p.getUsername(), senderLabel)
+                    ? ChatTooltip.apply(target, configuration, p.getUsername(), senderLabel, tooltipPrefix)
                     : target);
         }
     }

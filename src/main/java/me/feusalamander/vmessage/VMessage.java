@@ -149,12 +149,16 @@ public class VMessage {
         }
         final String hover = safeTrim(configuration.getTooltipHover());
         final String suggest = safeTrim(configuration.getTooltipSuggest());
-        if (hover.isEmpty() && suggest.isEmpty()) {
-            logger.info("[vmessage] 消息的悬停提示 / 点击填命令：开着但 hover 和 suggest 都留空了，等于没效果");
+        final String prefix = safeTrim(configuration.getTooltipPrefix());
+        if (hover.isEmpty() && suggest.isEmpty() && prefix.isEmpty()) {
+            logger.info("[vmessage] 消息的悬停提示 / 点击填命令：开着但 hover、suggest、prefix 都留空了，等于没效果");
             return;
         }
+        // 前缀只给跨服聊天加 —— 日志里点明，免得服主配了却在广播上看不到
+        final String prefixLog = prefix.isEmpty() ? "" : "；聊天额外挂前缀「" + prefix + "」（广播不加）";
         logger.info("[vmessage] 消息悬停（聊天 + 五类广播）：" + (hover.isEmpty() ? "不显示" : "「" + hover + "」")
                 + "；点击填入聊天框：" + (suggest.isEmpty() ? "不响应" : "「" + suggest + "」")
+                + prefixLog
                 + "；时间格式 " + configuration.getTooltipTimeFormat()
                 + "（时区 " + configuration.getTooltipZone() + "）");
         if (configuration.isTooltipCopyEnabled()) {
