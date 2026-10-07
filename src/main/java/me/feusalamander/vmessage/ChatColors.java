@@ -132,6 +132,27 @@ public final class ChatColors {
     }
 
     /**
+     * 解析 <b>格式串</b>：{@code Message.format}、{@code no-papi-format}、悬停前缀、
+     * 五档广播，以及子服 PAPI 变量 {@code %xxx%} 的解析结果。
+     *
+     * <p>跟 {@link #component} 的区别：那是玩家聊天内容，受 {@code message-colors} 配置和
+     * {@code vmessage.color} 权限约束（strip 时颜色码会被摘掉）；而格式串是管理员写在配置里的、
+     * PAPI 的值是子服插件算出来的，<b>一律按 parse 处理</b> ——
+     * 否则没颜色权限的玩家连称号、公会名、服务器名的颜色都会一起丢掉。
+     *
+     * <p>支持的写法跟聊天内容完全一致（因为同样过一遍 {@link #normalize}）：
+     * {@code &c} / {@code &#RRGGBB} / {@code &#RGB} / 裸 {@code #RRGGBB} /
+     * {@code {#RRGGBB}} / {@code {#名字}} / {@code {#A>}渐变{#B<}}。
+     * 以前这里只认 {@code &c} 和 {@code &#RRGGBB}，其余写法会原样显示给玩家。
+     *
+     * <p>⚠️ MiniMessage 模式（{@code minimessage = true}）<b>不要</b>走这里 ——
+     * 那是 {@code <red>} 语法，把 {@code &} 补进裸 hex 会破坏标签结构。
+     */
+    public static Component format(final String text, final Map<String, String> namedColors) {
+        return component("parse", text, namedColors, true);
+    }
+
+    /**
      * 按模式把聊天内容变成组件：parse 解析颜色，strip / keep 都当纯文本。
      *
      * @param gradientAllowed 是否允许渲染渐变（{@code {#A>}文字{#B<}}）。false 时只摘掉渐变标记，

@@ -55,6 +55,8 @@ PlayerChatEvent (Listeners.onMessage)
   ↓ ④ 拼格式：#player#/#prefix#/#suffix#/#server# 内建位 → #xxx# 当 LuckPerms meta 键查
   ↓            → FormatCleaner.mark() 给 %xxx% 套边界标记 → %xxx% 走 PapiBridge 向「发送者所在子服」现算
   ↓ ⑤ ChatColors 按 message-colors（strip/parse/keep）+ vmessage.color 权限处理消息内容
+  ↓    ⚠️ 格式串（format / no-papi-format / Tooltip / 广播 / %xxx% 的返回值）也走 ChatColors，
+  ↓       但**恒按 parse**，不吃 message-colors —— 见铁律 19
   ↓ ⑥ FormatCleaner.finish()：resolveMarks（空值→哨兵）→ stripUnresolved（空括号→哨兵）→ collapse（收空格）→ Linkify 做网址
   ↓ ⑦ 发给「除发送者所在服以外」且通过名单的其它子服（这一步才挂上 [Tooltip] 的悬停/点击）
   ↓ ⑧ 跑 [Message].commands
@@ -147,15 +149,29 @@ Listeners.message()
     老键 `no-papi-servers` / `read-bridge-blacklist` 只在 `warnRenamedKeys()` 里提示一句，
     **不参与计算** —— 黑名单转白名单要先知道「全部服有哪些」，配置阶段拿不到。
     （`PapiBlacklist.java` 已随 `read-bridge-blacklist` 一起删掉。）
-18. 🔴 **裸 hex `BARE_HEX_6` 的两个断言一个都不能拆，而且在 `STRIP` 里必须排最后**：
+18. 🔴 **裸 hex `BARE_HEX_6 = (?<![&§{])#([0-9a-fA-F]{6})`，头部断言不能拆，且在 `STRIP` 里必须排最后**：
     `(?<![&§{])` —— 没有它，`&#FF0000` 会被二次加 `&` 变成 `&&#FF0000`（多一个字面 `&`），
-    `{#FF0000}` 也会被插进一个 `&#` 把 CMI 写法搅坏；`(?![0-9a-fA-F])` —— 没有它，
-    `#FF0000AA`（8 位带 alpha）会被吃掉前 6 位、漏一个尾巴。
+    `{#FF0000}` 也会被插进一个 `&#` 把 CMI 写法搅坏。
+    🔴 **尾部刻意不加 `(?![0-9a-fA-F])`**（v1.14.0 加过、v1.14.1 删掉）：加了它，`#00ff001`
+    「绿字 1」、`#FF0000abc` 这类**颜色码后直接跟数字/字母**的写法全部失效 ——
+    而玩家实测日志里全是这种写法。现在统一按「`#` 后取 6 位当颜色、剩下的是文字」处理，
+    `#FF0000AA` 会渲染成红色的「AA」，这个代价远小于漏解析。
     `STRIP` 里裸 hex 放在所有带 `&`/`{}` 的分支**之后**，否则 `#FF0000` 先被摘掉、留下孤零零的 `&` 或 `{`。
     ⚠️ **只认 6 位，故意不做裸 `#RGB`**：中文聊天里 `#666`「666」是高频网络用语，误伤太大；
     要简写请写 `&#F00`（带 `&` 本来就没歧义，照旧支持）。
     ⚠️ `normalize()` 里裸 hex 是**最后一步**（`&#RRGGBB` / `{#RRGGBB}` 都已在前面变成 `&#RRGGBB`），
     顺序调换了就会重复加 `&`。
+19. 🔴 **两条解析路径，能力必须分清**：
+    | | 解析器 | 受 `message-colors` / `vmessage.color` 约束 | 裸 hex / `{#RRGGBB}` / 渐变 |
+    |---|---|---|---|
+    | **玩家聊天内容** `#message#` | `ChatColors.component(mode, …)` | ✅ 是（strip 会摘掉颜色码） | ✅ |
+    | **格式串**：`format` / `no-papi-format` / Tooltip hover+prefix / 五档广播 / `%xxx%` 返回值 | `ChatColors.format(…)` | ❌ **恒按 parse** | ✅（v1.15.0 起） |
+    格式串恒 parse 是刻意的：它是管理员配的、PAPI 是子服插件算的，
+    不能因为说话的人没 `vmessage.color` 权限就把称号/公会名/服务器名的颜色一起剥掉。
+    ⚠️ `minimessage = true` 时格式串**不能**过 `ChatColors`（那是 `<red>` 语法，补 `&` 会破坏标签）——
+    `Listeners.parseQuietly(text, mini, namedColors)` 里靠 `mini` 分支隔开。
+    📌 风险点已测：归一化不会破坏 `#message#` 占位符（它后面还要 `replaceText` 换成正文组件）——
+    `PapiFormatTest` 有专门断言。
 
 ---
 

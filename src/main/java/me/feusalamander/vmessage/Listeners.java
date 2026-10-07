@@ -363,8 +363,9 @@ public final class Listeners {
             return;
         }
         final boolean mini = configuration.isMinimessageEnabled();
-        // MiniMessage 模式下 § 会破坏解析，先抠掉；& 模式保持原样（跟上游一致）
-        final Component component = parseQuietly(mini ? message.replace("§", "") : message, mini);
+        // MiniMessage 模式下 § 会破坏解析，先抠掉；& 模式保持原样（跟上游一致，由 ChatColors 把 § 转成 &）
+        final Component component = parseQuietly(mini ? message.replace("§", "") : message, mini,
+                configuration.getNamedColors());
         // ⚠️ 广播只挂悬停，不挂点击：点一下填 /msg 对「XX 加入了服务器」没有意义
         proxyServer.sendMessage(
                 ChatTooltip.applyHover(component, configuration, p.getUsername(), serverLabel));
@@ -584,7 +585,7 @@ public final class Listeners {
         // ⚠️ 不能像上游那样把 content 直接拼进格式串再一起反序列化 ——
         //    玩家说的话里带 < > 就会破坏格式串的结构，而且网址也会跟着被解析。
         Component body = mini && permission
-                ? parseQuietly(content.replace("§", ""), true)
+                ? parseQuietly(content.replace("§", ""), true, namedColors)
                 : messageComponent(colorMode, content, namedColors, gradient);
         // ⚠️ 复制用的纯文本要在网址被换成「[链接]」之前取，否则粘到剪贴板里的是「[链接]」三个字
         final String copyText = ChatTooltip.plain(body);
@@ -593,7 +594,13 @@ public final class Listeners {
         // 正文单独挂「悬停提示 + 点一下复制」：它自己设过事件就不会继承整条消息的
         // 「悬停看发送时间 / 点击填 /msg」—— 前缀和名字那一段仍然保留那两个效果。
         body = ChatTooltip.copy(body, configuration, copyText);
-        final Component parsed = parseQuietly(message.replace("§", ""), mini);
+        // 格式串（含子服 PAPI 变量的解析结果）：& 码模式下多过一遍 ChatColors ——
+        // LegacyComponentSerializer 只认 &c / &#RRGGBB，而 PAPI 返回值和 LP 前缀里完全可能是
+        // CMI 那套写法（裸 #RRGGBB、{#RRGGBB}、{#名字}、渐变），不过一遍就原样显示给玩家了。
+        // ⚠️ MiniMessage 模式不能过（那是 <red> 语法，补 & 会破坏标签），保持老路径。
+        final Component parsed = mini
+                ? parseQuietly(message.replace("§", ""), true, namedColors)
+                : parseQuietly(message, false, namedColors);
         return parsed.replaceText(net.kyori.adventure.text.TextReplacementConfig.builder()
                 .matchLiteral("#message#")
                 .replacement(body)
@@ -606,12 +613,14 @@ public final class Listeners {
      * 为什么要兜底：抛出去的话整条消息就没了 —— 别的子服一条都收不到，比"显示得难看"严重得多。
      * 触发场景很实在：MiniMessage 模式下玩家内容里有畸形标签、LuckPerms 前缀里带奇怪字符等。
      *
-     * @param text  待解析的串
-     * @param mini  true = 按 MiniMessage 解析，false = 按 & 颜色码解析
+     * @param text        待解析的串
+     * @param mini        true = 按 MiniMessage 解析，false = 按 & 颜色码解析（并额外支持 CMI 写法）
+     * @param namedColors {@code [Named-Colors]} 配置表，给 {@code {#名字}} 查色用；可以为 null
      */
-    private static Component parseQuietly(final String text, final boolean mini) {
+    private static Component parseQuietly(final String text, final boolean mini,
+                                          final Map<String, String> namedColors) {
         try {
-            return mini ? mm.deserialize(text) : SERIALIZER.deserialize(text);
+            return mini ? mm.deserialize(text) : ChatColors.format(text, namedColors);
         } catch (final RuntimeException ex) {
             if (warnedParse.compareAndSet(true, false)) {
                 org.slf4j.LoggerFactory.getLogger("vmessage").warn(

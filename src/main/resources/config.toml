@@ -37,6 +37,9 @@ minimessage = false
 # ★ 关键：false = 不拦原始聊天，只把格式化消息发给「除发送者所在服以外」的子服
 #   （与线上 velocity-chat 的 passthrough=false 行为一致，子服插件不受影响）
 #   改成 true 会 deny 原始事件并全服重发，1.19.1+ 会踢人，别开
+# ★ format 里（以及 %xxx% 解析出来的值里）可以写裸 hex #RRGGBB、{#RRGGBB}、{#名字}、渐变 ——
+#   跟玩家聊天内容同一套语法，恒按 parse 处理，不受下面的 message-colors 影响
+#   （详见「parse 模式支持的写法」那段）
 format = "&8[&b#server#&8] &r%playerTitle_use% [&6%legendaryguild_guild%&r] #prefix#&f#player#&7: &r#message#"
 all = false
 commands = []
@@ -84,6 +87,10 @@ message-colors = "strip"
 gradient-permission = "vmessage.gradient"
 #
 # parse 模式支持的写法（对齐 CMI/CMILib 的 CMIChatColor）：
+# ★ 这套写法在两处都生效 —— 玩家聊天内容（受下面的 message-colors 约束），
+#   以及 Message.format / no-papi-format / 悬停提示 / 五档广播 / %xxx% 的返回值
+#   （那些是管理员和子服插件给的东西，恒按 parse 处理，不受 message-colors 约束）
+# ⚠️ minimessage = true 时不适用（那是 <red> 语法）
 #   &4  &c  &l  &r ...        传统 16 色 + k/l/m/n/o/r
 #   &#FF0000  &#F00           hex（3 位会自动展开成 6 位）
 #   #FF0000                   裸 hex —— 前面不写 & 也认（只认 6 位；

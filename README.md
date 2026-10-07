@@ -300,6 +300,8 @@ hover  = "&e发送时间: &6{time}"
 
 ### 颜色语法（`message-colors = "parse"` 时）
 
+下表这套语法在两个地方都生效：**玩家聊天内容**和**格式串**（见下一节）。
+
 `message-colors = "parse"` 时支持（对齐 CMI/CMILib 的 `CMIChatColor`）：
 
 | 写法 | 例子 |
@@ -327,6 +329,25 @@ hover  = "&e发送时间: &6{time}"
   7 位以上的纯 hex 串在聊天里几乎不会出现，所以现在一律按「前 6 位是颜色、剩下的是文字」处理。
 
 `strip` 模式下这些写法一样会被摘掉（有 `vmessage.color` 权限的人走 parse，见上表）。
+
+#### 格式串（format / no-papi-format / 广播 / PAPI 变量）也认全套写法
+
+`Message.format`、`no-papi-format`、`[Tooltip]` 的 `hover` / `prefix`、五档广播，
+以及**子服 PAPI 变量 `%xxx%` 解析出来的值**，走同一套语法，而且**恒按 parse 处理** ——
+不受 `message-colors` 配置、也不受 `vmessage.color` 权限影响。
+也就是说没颜色权限的玩家，称号 / 公会名 / 服务器名里的颜色照常显示，
+只有他自己敲的字会被 strip。
+
+所以这些写法在 format 里都能用：
+
+```toml
+format = "&8[&b#server#&8] &r#FF00FF%playerTitle_use% [&6%legendaryguild_guild%&r] #prefix#&f#player#&7: &r#message#"
+#                              ↑ 裸 hex，PAPI 返回的称号带什么色就是什么色
+```
+
+📌 v1.15.0 起才这样。以前格式串只认 `&c` / `&#RRGGBB`，裸 hex、CMI 花括号、渐变会**原样显示**
+（`{#FF0000}红字` 里的花括号都看得到）。
+⚠️ `minimessage = true` 时不走这套 —— 那是 `<red>` 语法，`&` 归一化会破坏标签。
 
 ---
 
@@ -580,6 +601,17 @@ papi-servers = ["lobby", "survival", "survival2", "industry"]
 
 ⚠️ 只认 **6 位**裸 hex：3 位的 `#666` 不解析（「666」是网络用语，会误伤），
 要简写请写 `&#F00`。详见上面「颜色语法」一节。
+
+### 23. 格式串与 PAPI 变量也认全套颜色写法
+
+`Message.format`、`no-papi-format`、悬停提示、五档广播，以及**子服 PAPI 变量 `%xxx%` 的返回值**，
+以前只认 `&c` / `&#RRGGBB` —— 裸 hex、CMI 花括号、命名色、渐变一律原样显示给玩家。
+现在它们跟玩家聊天内容过同一套 `ChatColors`，语法完全一致。
+
+而且格式串**恒按 parse 处理**，不吃 `message-colors`：没 `vmessage.color` 权限的玩家，
+称号 / 公会名 / 服务器名的颜色仍然正常，只有他自己敲的字会被 strip。
+
+⚠️ `minimessage = true` 时不走这套（那是 `<red>` 语法）。
 
 ---
 
