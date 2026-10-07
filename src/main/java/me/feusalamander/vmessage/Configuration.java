@@ -171,6 +171,11 @@ public final class Configuration {
     private volatile long autoReloadIntervalSeconds;
     /** 上一次 reload 失败的原因（TOML 语法错误），读一次就清掉。 */
     private volatile String lastError;
+    /**
+     * 排查日志总开关。目前管的是「配置速览」那一大段（起服 / reload 时打印当前生效的关键配置）。
+     * 默认关 —— 控制台保持干净；想确认「改的配置到底生效没」时打开再 reload 即可。
+     */
+    private volatile boolean debug;
 
     Configuration(Toml config) {
         apply(config);
@@ -287,6 +292,11 @@ public final class Configuration {
         // 整个集合替换，不在原集合上 clear+addAll —— 免得别的线程读到「清空了但还没填」的中间态
         final Set<String> newPapiServers = readServerList(config, "Message.papi-servers");
 
+        // ---- 排查日志总开关 ----
+        // ⚠️ 跟上面一样别写问号表达式：toml4j 对缺失的键可能返回 null，拆箱会 NPE
+        final Boolean debugRaw = config.getBoolean("debug", Boolean.FALSE);
+        final boolean newDebug = debugRaw != null && debugRaw;
+
         // ---- 热重载 ----
         final boolean newAutoReload = config.getBoolean("auto-reload", false);
         final long newAutoReloadIntervalSeconds =
@@ -355,6 +365,8 @@ public final class Configuration {
         noPapiFormat = newNoPapiFormat;
         papiServers = newPapiServers;
         warnRenamedKeys(config);
+
+        debug = newDebug;
 
         autoReload = newAutoReload;
         autoReloadIntervalSeconds = newAutoReloadIntervalSeconds;
@@ -825,6 +837,14 @@ public final class Configuration {
     /** 改了 config.toml 就自动重载，不用敲命令。 */
     public boolean isAutoReload() {
         return this.autoReload;
+    }
+
+    /**
+     * 排查日志总开关：{@code true} 才在起服 / reload 时打印「配置速览」那一大段。
+     * 默认 {@code false} —— 控制台保持干净。改完 /vmessage reload 就生效，不用重启。
+     */
+    public boolean isDebug() {
+        return this.debug;
     }
 
     /** 自动重载的检查间隔（秒）。 */

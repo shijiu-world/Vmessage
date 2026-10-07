@@ -135,7 +135,12 @@ Listeners.message()
 15. 📌 **`prefix` 与主格式要分开调 `PapiBridge`**：两者是不同的模板串，不能先拼一个串再按
     分隔符拆（PAPI 的返回值里完全可能出现那个分隔符）。没含 `%` 的那一路直接给
     `CompletableFuture.completedFuture`，别多跑一趟桥接。
-16. 🔴 **`Message.papi-servers` 是白名单**（列出**装了**桥接的服；v1.13.0 之前的
+16. 📌 **起服速览归 `debug` 开关**：`VMessage.reportConfig()`（`reportTooltip`/`reportServerFilter`/
+    `reportAwaitCancel` 都是它的子过程）第一行就 `if (!configuration.isDebug()) return;` —— 默认不打。
+    排查时把 config.toml 的 `debug` 改成 true 再 `/vmessage reload` 就能看到，**不用重启代理**
+    （`reload()` 里也调了 `reportConfig()`）。加新的速览行就往这几个方法里写，别自己开 logger.info。
+    ⚠️ `PAPIProxyBridge 状态：已连接` 那两行**不受** debug 管（属运行状态，是验证桥接的标记）。
+17. 🔴 **`Message.papi-servers` 是白名单**（列出**装了**桥接的服；v1.13.0 之前的
     `no-papi-servers` 是黑名单，已删）。判定的唯一入口是 `Configuration.isPapiServer()`，
     `isNoPapiServer()` 只是它的取反 —— 别在调用点自己写 `!contains(...)`。
     ⚠️ **留空 = 全部都按「装了」算**（沿用老默认，升级不炸）；只有非空时才逐个比对。
@@ -249,6 +254,7 @@ JAVA_HOME=D:/Code/Java/zulu25.34.17-ca-jdk25.0.3-win_x64 mvn -B -o package
 |---|---|
 | 一说话就崩 | 是不是用了原版 jar？必须自编译修补版。原版在 Velocity 4.x 上 `NoSuchMethodError` |
 | `%xxx%` 显示为空 | 目标服没装 PPB-Bukkit；或 `papi-servers` 白名单里没写它（每次发言白等一次超时） |
+| 起服看不到「配置速览」 | 正常 —— v1.13.0 起归 `debug` 管，默认不打。把 `debug` 改 true 再 `/vmessage reload` |
 | 玩家输入「64」被别的服看到 | 那个子服没装 `VmessageSuppress`；或它被写进了 `await-cancel-servers` 黑名单（黑名单 = 不等） |
 | 被踢的人播两条 | `KickTracker` 失效了，查标记是不是没取用/没兜底 |
 | 消息里网址坏了 | 剥色正则的 `(?!=)` 断言被改掉了 |

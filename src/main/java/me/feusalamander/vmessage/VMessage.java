@@ -110,8 +110,16 @@ public class VMessage {
         }
     }
 
-    /** 打印当前生效的关键配置（起服和每次 reload 后都打一遍，方便确认到底生效了没）。 */
+    /**
+     * 打印当前生效的关键配置（「配置速览」，方便确认改的东西到底生效了没）。
+     *
+     * <p>⚠️ **默认不打** —— 只有 config.toml 里 {@code debug = true} 时才输出，控制台平时是干净的。
+     * 想看速览就把 debug 改成 true 再 {@code /vmessage reload}（不用重启代理）。
+     */
     private void reportConfig() {
+        if (!configuration.isDebug()) {
+            return;
+        }
         logger.info("[vmessage] 聊天内容颜色码处理：" + configuration.getMessageColors()
                 + "（strip=剥掉 / parse=解析 / keep=原样；有 vmessage.color 权限的玩家一律解析）");
         final Set<String> papiServers = configuration.getPapiServers();

@@ -21,6 +21,13 @@ auto-reload = false
 # 自动重载的检查间隔（秒），最小 1 秒
 auto-reload-interval-seconds = 5
 
+# 排查日志总开关
+# false - 控制台干干净净：起服和 reload 都不打「配置速览」那一大段（默认）
+# true  - 起服和每次 reload 都把当前生效的关键配置打一遍
+#         （改完配置想确认到底生效没、或者排查的时候开一下）
+# 改完 /vmessage reload 就生效，不用重启
+debug = false
+
 [Message-format]
 # false = 用 & 颜色码(+ &#RRGGBB hex)；true = MiniMessage
 # 必须保持 false：LuckPerms 里存的是 & 颜色码，MiniMessage 模式会原样显示

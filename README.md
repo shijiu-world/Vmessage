@@ -48,15 +48,26 @@
 
 文件位置：`plugins/vmessage/config.toml`。改完执行 `/vmessage reload`，或把 `auto-reload` 打开。
 
-### 顶层：热重载
+### 顶层：热重载 & 日志
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
 | `auto-reload` | `false` | `true` = 定时检查文件修改时间，改了自动重载，不用敲命令不用重启 |
 | `auto-reload-interval-seconds` | `5` | 检查间隔（秒），最小 1 |
+| `debug` | `false` | 排查日志总开关。**只有它为 `true` 时**，起服和每次 reload 才打印「配置速览」 |
 
 ⚠️ 热重载**只管 `config.toml` 这一个文件**。TOML 写错时会保留旧配置并打 WARN，不会让插件失效。
 `PAPIProxyBridge` 自己的 `settings.yml`、jar 本身不在此列。
+
+#### `debug` —— 配置速览
+
+默认控制台是干净的：起服只打一行 `Vmessage by 拾玖世界 is working !`。
+想看「当前生效的关键配置」（聊天颜色模式、`papi-servers`、渐变、网址、悬停/点击、跨服名单……），
+把 `debug` 改成 `true` 再 `/vmessage reload` —— 不用重启代理，速览立刻打出来，看完改回 `false` 即可。
+
+- 排查「改了配置怎么没生效」时最好用：速览打的是**插件实际读到的值**，不是你以为写进去的值。
+- 🔴 不受 `debug` 影响的：`PAPIProxyBridge 状态：已连接` 那两行（它说明桥接通不通，属于运行状态、
+  不是配置速览），以及所有 WARN / ERROR。
 
 ### `[Message-format]`
 
@@ -544,6 +555,11 @@ papi-servers = ["lobby", "survival", "survival2", "industry"]
 
 ⚠️ **老配置不会自动迁移**：`no-papi-servers` / `read-bridge-blacklist` 留着会打一条 warn 并被忽略
 （黑名单转白名单要先知道「全部服有哪些」，配置阶段拿不到）。手动把装了桥接的服列进 `papi-servers` 即可。
+
+### 21. 起服速览默认不打印，归 `debug` 开关
+
+以前起服 / reload 都会打一大段「配置速览」，排查有用、平时是噪音。现在只有 `debug = true` 时才输出。
+想看就打开 `debug` 再 `/vmessage reload`（不用重启），看完改回 `false`。
 
 ---
 
